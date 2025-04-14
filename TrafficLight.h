@@ -8,22 +8,22 @@
 
 class TrafficLight {
 private:
-    ANSCENTER::ANSLIB detector;
-    std::string modelName;
-    std::string className;
-    int modelType;
-    int detectionType;
-    std::string modelDirectory;
-    float detectionScoreThreshold;
-    float confidenceThreshold;
-    float nmsThreshold;
-    std::string labelMap;
+    ANSCENTER::ANSLIB m_detector;
+    std::string m_modelName;
+    std::string m_className;
+    int m_modelType;
+    int m_detectionType;
+    std::string m_modelDirectory;
+    float m_detectionScoreThreshold;
+    float m_confidenceThreshold;
+    float m_nmsThreshold;
+    std::string m_labelMap;
     
     // Traffic light ROI
-    std::vector<ANSCENTER::Region> trafficROIs;
+    std::vector<ANSCENTER::Region> m_trafficROIs;
     
     // Parameters
-    std::vector<ANSCENTER::Params> parameters;
+    std::vector<ANSCENTER::Params> m_parameters;
 
 public:
     TrafficLight();

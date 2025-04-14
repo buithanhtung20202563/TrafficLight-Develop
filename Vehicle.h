@@ -8,24 +8,24 @@
 
 class Vehicle {
 private:
-    ANSCENTER::ANSLIB detector;
-    std::string modelName;
-    std::string className;
-    int modelType;
-    int detectionType;
-    std::string modelDirectory;
-    float detectionScoreThreshold;
-    float confidenceThreshold;
-    float nmsThreshold;
-    std::string labelMap;
+    ANSCENTER::ANSLIB m_detector;
+    std::string m_modelName;
+    std::string m_className;
+    int m_modelType;
+    int m_detectionType;
+    std::string m_modelDirectory;
+    float m_detectionScoreThreshold;
+    float m_confidenceThreshold;
+    float m_nmsThreshold;
+    std::string m_labelMap;
     
     // Vehicle-related ROIs
-    std::vector<ANSCENTER::Region> detectAreaROI;
-    std::vector<ANSCENTER::Region> crossingLineROI;
-    std::vector<ANSCENTER::Region> directionLineROI;
+    std::vector<ANSCENTER::Region> m_detectAreaROI;
+    std::vector<ANSCENTER::Region> m_crossingLineROI;
+    std::vector<ANSCENTER::Region> m_directionLineROI;
     
     // Parameters
-    std::vector<ANSCENTER::Params> parameters;
+    std::vector<ANSCENTER::Params> m_parameters;
     
     // Tracking data
     struct TrackedVehicle {
@@ -36,7 +36,7 @@ private:
         std::chrono::system_clock::time_point lastSeen;
     };
     
-    std::vector<TrackedVehicle> trackedVehicles;
+    std::vector<TrackedVehicle> m_trackedVehicles;
     
 public:
     Vehicle();

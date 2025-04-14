@@ -1,57 +1,61 @@
 #ifndef CUSTOM_LOGIC_H
 #define CUSTOM_LOGIC_H
 
+#include "ANSCustomTrafficLight.h"
+#include "Vehicle.h"
+#include "TrafficLight.h"
 #include <string>
 #include <vector>
 #include <functional>
-#include <opencv2/opencv.hpp>
-#include "Vehicle.h"
-#include "TrafficLight.h"
-#include "ANSLIB.h"
 
-// Define the callback function type for triggers
-typedef std::function<void(const std::string&, const cv::Mat&, const cv::Rect&)> ViolationCallback;
-
-class CustomLogic {
+class CustomLogic : public ANSCustomTL {
 private:
-    // Components for detection
-    Vehicle vehicleDetector;
-    TrafficLight trafficLightDetector;
+    Vehicle m_vehicleDetector;
+    TrafficLight m_trafficLightDetector;
     
-    // Configuration
-    std::string modelDirectory;
-    float detectionThreshold;
+    // Callback for violation detection
+    std::function<void(const std::string&, const CustomObject&)> m_violationCallback;
     
-    // Callback for violations
-    ViolationCallback violationCallback;
+    // Detection thresholds and parameters
+    float m_vehicleDetectionThreshold;
+    float m_trafficLightDetectionThreshold;
     
-    // Internal state
-    std::vector<int> violatingVehicles;
-    bool isRedLight;
+    // Internal tracking
+    std::vector<CustomObject> m_lastDetectedVehicles;
+    std::vector<CustomObject> m_lastDetectedTrafficLights;
+    bool m_isRedLightOn;
     
-    // Mutex for thread safety
-    std::recursive_mutex _mutex;
+    // Support functions
+    bool IsVehicleCrossingLine(const CustomObject& vehicle);
+    bool IsRedLight(const std::vector<CustomObject>& trafficLights);
+    void ProcessViolations(const std::vector<CustomObject>& vehicles, const std::string& cameraId);
     
-    // Helper methods
-    bool isVehicleViolating(const ANSCENTER::Object& vehicle);
-    void recordViolation(const ANSCENTER::Object& vehicle, const cv::Mat& frame);
-
+protected:
+    // Overrides from ANSCustomTL
+    bool Initialize(const std::string& modelDirectory, float detectionScoreThreshold, std::string& labelMap) override;
+    bool OptimizeModel(bool fp16) override;
+    std::vector<CustomObject> RunInference(const cv::Mat& input, const std::string& camera_id) override;
+    bool ConfigureParamaters(std::vector<CustomParams>& param) override;
+    bool Destroy() override;
+    
 public:
     CustomLogic();
     ~CustomLogic();
     
-    // Initialization and configuration
-    bool Initialize(const std::string& modelDir, float threshold);
-    bool OptimizeModel(bool fp16);
+    // Violation detection function
+    void SetViolationCallback(std::function<void(const std::string&, const CustomObject&)> callback);
     
-    // Set callback for violation triggers
-    void SetViolationCallback(ViolationCallback callback);
+    // Configuration methods
+    void SetDetectionThresholds(float vehicleThreshold, float trafficLightThreshold);
     
-    // Process a frame
-    bool ProcessFrame(const cv::Mat& frame, const std::string& cameraId);
+    // Results access
+    std::vector<CustomObject> GetLastDetectedVehicles() const;
+    std::vector<CustomObject> GetLastDetectedTrafficLights() const;
+    bool IsRedLightActive() const;
     
-    // Cleanup resources
-    bool Destroy();
+    // Direct detection methods (exposed for convenience)
+    std::vector<CustomObject> DetectVehicles(const cv::Mat& input, const std::string& cameraId);
+    std::vector<CustomObject> DetectTrafficLights(const cv::Mat& input, const std::string& cameraId);
 };
 
 #endif // CUSTOM_LOGIC_H
