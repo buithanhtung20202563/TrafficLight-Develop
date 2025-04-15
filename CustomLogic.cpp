@@ -1,286 +1,254 @@
 #include "CustomLogic.h"
-#include <algorithm>
-#include <mutex>
+#include <iostream>
+#include <chrono>
+#include <iomanip>
 
-// Global mutex for thread safety
-static std::recursive_mutex g_mutex;
-
-CustomLogic::CustomLogic() 
-    : m_vehicleDetectionThreshold(0.5),
-      m_trafficLightDetectionThreshold(0.5),
-      m_isRedLightOn(false)
-{
-    // Inherit from ANSCustomTL constructor
+CustomLogic::CustomLogic() {
+    // Constructor
 }
 
-CustomLogic::~CustomLogic() 
-{
+CustomLogic::~CustomLogic() {
     Destroy();
 }
 
-bool CustomLogic::Initialize(const std::string& modelDirectory, float detectionScoreThreshold, std::string& labelMap) 
-{
-    std::lock_guard<std::recursive_mutex> lock(g_mutex);
-    
-    // Initialize base class
-    bool baseInitialized = ANSCustomTL::Initialize(modelDirectory, detectionScoreThreshold, labelMap);
-    
+CustomObject CustomLogic::ConvertToCustomObject(const ANSCENTER::Object& obj, const std::string& cameraId, int classIdOffset) {
+    CustomObject customObj;
+    customObj.classId = obj.classId + classIdOffset;
+    customObj.trackId = obj.trackId;
+    customObj.className = obj.className;
+    customObj.confidence = obj.confidence;
+    customObj.box = obj.box;
+    customObj.cameraId = cameraId;
+    customObj.polygon = obj.polygon;
+    customObj.mask = obj.mask;
+    customObj.kps = obj.kps;
+    customObj.extraInfo = obj.extraInfo;
+    return customObj;
+}
+
+bool CustomLogic::Initialize(const std::string& modelDirectory, float detectionScoreThreshold, std::string& labelMap) {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
+    _modelDirectory = modelDirectory;
+    _detectionScoreThreshold = detectionScoreThreshold;
+
     // Initialize vehicle detector
-    bool vehicleInitialized = m_vehicleDetector.Initialize(modelDirectory, m_vehicleDetectionThreshold);
-    
-    // Initialize traffic light detector
-    bool trafficLightInitialized = m_trafficLightDetector.Initialize(modelDirectory, m_trafficLightDetectionThreshold);
-    
-    return baseInitialized && vehicleInitialized && trafficLightInitialized;
-}
-
-bool CustomLogic::OptimizeModel(bool fp16) 
-{
-    std::lock_guard<std::recursive_mutex> lock(g_mutex);
-    
-    // Optimize base models
-    bool baseOptimized = ANSCustomTL::OptimizeModel(fp16);
-    
-    // Optimize vehicle detector
-    bool vehicleOptimized = m_vehicleDetector.Optimize(fp16);
-    
-    // Optimize traffic light detector
-    bool trafficLightOptimized = m_trafficLightDetector.Optimize(fp16);
-    
-    return baseOptimized && vehicleOptimized && trafficLightOptimized;
-}
-
-std::vector<CustomObject> CustomLogic::RunInference(const cv::Mat& input, const std::string& camera_id) 
-{
-    std::lock_guard<std::recursive_mutex> lock(g_mutex);
-    
-    // Run detection for vehicles
-    std::vector<ANSCENTER::Object> detectedVehicles = m_vehicleDetector.DetectVehicles(input, camera_id);
-    
-    // Run detection for traffic lights
-    std::vector<ANSCENTER::Object> detectedTrafficLights = m_trafficLightDetector.DetectTrafficLights(input, camera_id);
-    
-    // Convert ANSCENTER::Object to CustomObject for vehicles
-    m_lastDetectedVehicles.clear();
-    for (const auto& obj : detectedVehicles) {
-        CustomObject customObj;
-        customObj.classId = obj.classId;
-        customObj.trackId = obj.trackId;
-        customObj.className = obj.className;
-        customObj.confidence = obj.confidence;
-        customObj.box = obj.box;
-        customObj.cameraId = camera_id;
-        m_lastDetectedVehicles.push_back(customObj);
-    }
-    
-    // Convert ANSCENTER::Object to CustomObject for traffic lights
-    m_lastDetectedTrafficLights.clear();
-    int maxVehicleClassId = 7; // Based on the class map in ANSCustomTrafficLight.cpp
-    for (const auto& obj : detectedTrafficLights) {
-        CustomObject customObj;
-        customObj.classId = obj.classId + maxVehicleClassId;
-        customObj.trackId = obj.trackId;
-        customObj.className = obj.className;
-        customObj.confidence = obj.confidence;
-        customObj.box = obj.box;
-        customObj.cameraId = camera_id;
-        m_lastDetectedTrafficLights.push_back(customObj);
-    }
-    
-    // Check for red light status
-    m_isRedLightOn = IsRedLight(m_lastDetectedTrafficLights);
-    
-    // Process violations if there's a red light
-    if (m_isRedLightOn) {
-        ProcessViolations(m_lastDetectedVehicles, camera_id);
-    }
-    
-    // Combine results (similar to ANSCustomTL::RunInference)
-    std::vector<CustomObject> results;
-    results.insert(results.end(), m_lastDetectedVehicles.begin(), m_lastDetectedVehicles.end());
-    results.insert(results.end(), m_lastDetectedTrafficLights.begin(), m_lastDetectedTrafficLights.end());
-    
-    return results;
-}
-
-bool CustomLogic::ConfigureParamaters(std::vector<CustomParams>& param) 
-{
-    std::lock_guard<std::recursive_mutex> lock(g_mutex);
-    
-    // Use the base class configuration as a starting point
-    bool baseConfigured = ANSCustomTL::ConfigureParamaters(param);
-    
-    // Configure vehicle detector parameters
-    m_vehicleDetector.ConfigureParameters();
-    
-    // Configure traffic light detector parameters
-    m_trafficLightDetector.ConfigureParameters();
-    
-    // Add additional custom parameters if needed
-    if (!this->_param.empty()) {
-        // Update the current parameters with any customizations
-        for (auto& p : param) {
-            if (p.handleId == 0) { // Vehicle detector
-                // Add additional parameters specific to our violation detection logic
-                CustomParamType violationParam;
-                violationParam.type = 0; // int
-                violationParam.name = "redLightViolationDetection";
-                violationParam.value = "1"; // Enabled
-                p.handleParametersJson.push_back(violationParam);
-            }
-        }
-    }
-    
-    return baseConfigured;
-}
-
-bool CustomLogic::Destroy() 
-{
-    std::lock_guard<std::recursive_mutex> lock(g_mutex);
-    
-    // Clean up base class resources
-    bool baseDestroyed = ANSCustomTL::Destroy();
-    
-    // Clean up vehicle detector
-    bool vehicleDestroyed = m_vehicleDetector.Destroy();
-    
-    // Clean up traffic light detector
-    bool trafficLightDestroyed = m_trafficLightDetector.Destroy();
-    
-    return baseDestroyed && vehicleDestroyed && trafficLightDestroyed;
-}
-
-bool CustomLogic::IsVehicleCrossingLine(const CustomObject& vehicle) 
-{
-    // Get crossing line information from vehicle detector
-    if (this->_param.empty() || this->_param[0].ROIs.empty()) {
+    std::string vehicleModelDir = modelDirectory + "\\vehicle";
+    bool vehicleInit = m_vehicleDetector.Initialize(vehicleModelDir, detectionScoreThreshold);
+    if (!vehicleInit) {
+        std::cerr << "Failed to initialize vehicle detector" << std::endl;
         return false;
     }
-    
-    // Find the crossing line ROI
-    const CustomRegion* crossingLine = nullptr;
-    for (const auto& roi : this->_param[0].ROIs) {
-        if (roi.regionName == "CrossingLine") {
-            crossingLine = &roi;
+
+    // Initialize traffic light detector
+    std::string trafficLightModelDir = modelDirectory + "\\light";
+    bool trafficLightInit = m_trafficLightDetector.Initialize(trafficLightModelDir, detectionScoreThreshold);
+    if (!trafficLightInit) {
+        std::cerr << "Failed to initialize traffic light detector" << std::endl;
+        return false;
+    }
+
+    // Create combined label map (similar to ANSCustomTL)
+    labelMap = "car,motorbike,bus,truck,bike,container,tricycle,human,green,red,yellow";
+    return true;
+}
+
+bool CustomLogic::OptimizeModel(bool fp16) {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
+    // Optimize both detectors
+    bool vehicleOpt = m_vehicleDetector.Optimize(fp16);
+    bool trafficLightOpt = m_trafficLightDetector.Optimize(fp16);
+
+    if (!vehicleOpt) {
+        std::cerr << "Failed to optimize vehicle detector" << std::endl;
+    }
+    if (!trafficLightOpt) {
+        std::cerr << "Failed to optimize traffic light detector" << std::endl;
+    }
+
+    return vehicleOpt && trafficLightOpt;
+}
+
+bool CustomLogic::ConfigureParamaters(std::vector<CustomParams>& param) {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
+    // Configure vehicle detector parameters
+    if (!m_vehicleDetector.ConfigureParameters()) {
+        std::cerr << "Failed to configure vehicle detector parameters" << std::endl;
+        return false;
+    }
+
+    // Configure traffic light detector parameters
+    if (!m_trafficLightDetector.ConfigureParameters()) {
+        std::cerr << "Failed to configure traffic light detector parameters" << std::endl;
+        return false;
+    }
+
+    // Create parameter schema for CustomLogic
+    if (_param.empty()) {
+        // Vehicle detector parameters
+        CustomParams vehicleParam;
+        vehicleParam.handleId = 0;
+        vehicleParam.handleName = "vehicle";
+
+        CustomParamType modelTypeParam;
+        modelTypeParam.type = 0; // int
+        modelTypeParam.name = "modelType";
+        modelTypeParam.value = "4"; // TensorRT
+        vehicleParam.handleParametersJson.push_back(modelTypeParam);
+
+        CustomParamType thresholdParam;
+        thresholdParam.type = 1; // double
+        thresholdParam.name = "threshold";
+        thresholdParam.value = std::to_string(_detectionScoreThreshold);
+        vehicleParam.handleParametersJson.push_back(thresholdParam);
+
+        // Vehicle ROIs (Detect Area, Crossing Line, Direction)
+        CustomRegion detectArea;
+        detectArea.regionType = 1; // Rectangle
+        detectArea.regionName = "DetectArea";
+        detectArea.polygon = {
+            cv::Point(100, 200), cv::Point(400, 200),
+            cv::Point(400, 400), cv::Point(100, 400)
+        };
+        vehicleParam.ROIs.push_back(detectArea);
+
+        CustomRegion crossingLine;
+        crossingLine.regionType = 2; // Line
+        crossingLine.regionName = "CrossingLine";
+        crossingLine.polygon = { cv::Point(100, 380), cv::Point(400, 380) };
+        vehicleParam.ROIs.push_back(crossingLine);
+
+        CustomRegion directionLine;
+        directionLine.regionType = 4; // Direction line
+        directionLine.regionName = "Direction";
+        directionLine.polygon = { cv::Point(250, 350), cv::Point(250, 250) };
+        vehicleParam.ROIs.push_back(directionLine);
+
+        _param.push_back(vehicleParam);
+
+        // Traffic light detector parameters
+        CustomParams lightParam;
+        lightParam.handleId = 1;
+        lightParam.handleName = "light";
+
+        CustomParamType lightThresholdParam;
+        lightThresholdParam.type = 1; // double
+        lightThresholdParam.name = "threshold";
+        lightThresholdParam.value = std::to_string(_detectionScoreThreshold);
+        lightParam.handleParametersJson.push_back(lightThresholdParam);
+
+        // Traffic light ROI
+        CustomRegion trafficRoi;
+        trafficRoi.regionType = 1; // Rectangle
+        trafficRoi.regionName = "TrafficRoi";
+        trafficRoi.polygon = {
+            cv::Point(100, 50), cv::Point(300, 50),
+            cv::Point(300, 200), cv::Point(100, 200)
+        };
+        lightParam.ROIs.push_back(trafficRoi);
+
+        _param.push_back(lightParam);
+    }
+
+    // Return parameters to caller
+    param = _param;
+    return true;
+}
+
+std::vector<CustomObject> CustomLogic::RunInference(const cv::Mat& input) {
+    return RunInference(input, "default_camera");
+}
+
+std::vector<CustomObject> CustomLogic::RunInference(const cv::Mat& input, const std::string& cameraId) {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    m_lastDetectionResults.clear();
+
+    try {
+        // Run vehicle detection
+        std::vector<ANSCENTER::Object> vehicles = m_vehicleDetector.DetectVehicles(input, cameraId);
+
+        // Run traffic light detection
+        std::vector<ANSCENTER::Object> trafficLights = m_trafficLightDetector.DetectTrafficLights(input, cameraId);
+
+        // Process violations (logs to console)
+        ProcessViolations(vehicles, trafficLights, cameraId);
+
+        // Combine results
+        for (const auto& obj : vehicles) {
+            m_lastDetectionResults.push_back(ConvertToCustomObject(obj, cameraId));
+        }
+
+        // Adjust traffic light class IDs (offset by 8, assuming vehicle classes are 0-7)
+        for (const auto& obj : trafficLights) {
+            m_lastDetectionResults.push_back(ConvertToCustomObject(obj, cameraId, 8));
+        }
+
+        return m_lastDetectionResults;
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Error in RunInference: " << e.what() << std::endl;
+        return {};
+    }
+}
+
+void CustomLogic::ProcessViolations(const std::vector<ANSCENTER::Object>& vehicles,
+    const std::vector<ANSCENTER::Object>& trafficLights,
+    const std::string& cameraId) {
+    // Check if traffic light is red
+    bool isRed = false;
+    for (const auto& light : trafficLights) {
+        if (light.className == "red" || light.classId == 1) { // Assuming red is classId 1 in TrafficLight
+            isRed = true;
             break;
         }
     }
-    
-    if (!crossingLine || crossingLine->polygon.size() < 2) {
-        return false;
-    }
-    
-    // Line is defined by two points
-    cv::Point lineStart = crossingLine->polygon[0];
-    cv::Point lineEnd = crossingLine->polygon[1];
-    
-    // Get the center bottom point of the vehicle
-    cv::Point vehiclePoint(
-        vehicle.box.x + vehicle.box.width / 2,
-        vehicle.box.y + vehicle.box.height
-    );
-    
-    // Check if this point is close to the line
-    // Calculate distance from point to line
-    double lineLength = cv::norm(lineEnd - lineStart);
-    double distance = std::abs((vehiclePoint.y - lineStart.y) * (lineEnd.x - lineStart.x) - 
-                         (vehiclePoint.x - lineStart.x) * (lineEnd.y - lineStart.y)) / lineLength;
-    
-    // Consider the vehicle has crossed if it's within a certain threshold distance
-    const double THRESHOLD_DISTANCE = 5.0;
-    return distance < THRESHOLD_DISTANCE;
-}
 
-bool CustomLogic::IsRedLight(const std::vector<CustomObject>& trafficLights) 
-{
-    // Check if any traffic light is red
-    for (const auto& light : trafficLights) {
-        // The red light class ID is 9 in the combined class IDs
-        // The combined labelMap has "red" at index 9 (based on ANSCustomTrafficLight.cpp)
-        if (light.className == "red" || light.classId == 9) {
-            return true;
-        }
-    }
-    return false;
-}
+    if (isRed) {
+        // Check for vehicles crossing the line
+        for (const auto& vehicle : vehicles) {
+            if (m_vehicleDetector.HasVehicleCrossedLine(vehicle)) {
+                // Log violation information
+                auto now = std::chrono::system_clock::now();
+                auto now_c = std::chrono::system_clock::to_time_t(now);
+                std::tm localTime;
+                localtime_s(&localTime, &now_c); // Use localtime_s for thread-safe and secure conversion
+                std::stringstream ss;
+                ss << std::put_time(&localTime, "%Y-%m-%d %H:%M:%S");
 
-void CustomLogic::ProcessViolations(const std::vector<CustomObject>& vehicles, const std::string& cameraId) 
-{
-    // Check for vehicles crossing the line during red light
-    for (const auto& vehicle : vehicles) {
-        if (IsVehicleCrossingLine(vehicle)) {
-            // We have a violation - vehicle crossing during red light
-            if (m_violationCallback) {
-                // Call the violation callback with the camera ID and violating vehicle
-                m_violationCallback(cameraId, vehicle);
+
+                std::cout << "Violation Detected!" << std::endl;
+                std::cout << "Timestamp: " << ss.str() << std::endl;
+                std::cout << "Camera ID: " << cameraId << std::endl;
+                std::cout << "Vehicle Type: " << vehicle.className << std::endl;
+                std::cout << "Track ID: " << vehicle.trackId << std::endl;
+                std::cout << "Bounding Box: [x: " << vehicle.box.x
+                    << ", y: " << vehicle.box.y
+                    << ", width: " << vehicle.box.width
+                    << ", height: " << vehicle.box.height << "]" << std::endl;
+                std::cout << "Confidence: " << vehicle.confidence << std::endl;
+                std::cout << "-----------------------------------" << std::endl;
             }
         }
     }
 }
 
-void CustomLogic::SetViolationCallback(std::function<void(const std::string&, const CustomObject&)> callback) 
-{
-    this->m_violationCallback = callback;
-}
+bool CustomLogic::Destroy() {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
 
-void CustomLogic::SetDetectionThresholds(float vehicleThreshold, float trafficLightThreshold) 
-{
-    this->m_vehicleDetectionThreshold = vehicleThreshold;
-    this->m_trafficLightDetectionThreshold = trafficLightThreshold;
-}
+    // Destroy both detectors
+    bool vehicleDestroyed = m_vehicleDetector.Destroy();
+    bool trafficLightDestroyed = m_trafficLightDetector.Destroy();
 
-std::vector<CustomObject> CustomLogic::GetLastDetectedVehicles() const 
-{
-    return m_lastDetectedVehicles;
-}
-
-std::vector<CustomObject> CustomLogic::GetLastDetectedTrafficLights() const 
-{
-    return m_lastDetectedTrafficLights;
-}
-
-bool CustomLogic::IsRedLightActive() const 
-{
-    return m_isRedLightOn;
-}
-
-std::vector<CustomObject> CustomLogic::DetectVehicles(const cv::Mat& input, const std::string& cameraId) 
-{
-    std::vector<ANSCENTER::Object> detectedVehicles = m_vehicleDetector.DetectVehicles(input, cameraId);
-    
-    // Convert ANSCENTER::Object to CustomObject
-    std::vector<CustomObject> result;
-    for (const auto& obj : detectedVehicles) {
-        CustomObject customObj;
-        customObj.classId = obj.classId;
-        customObj.trackId = obj.trackId;
-        customObj.className = obj.className;
-        customObj.confidence = obj.confidence;
-        customObj.box = obj.box;
-        customObj.cameraId = cameraId;
-        result.push_back(customObj);
+    if (!vehicleDestroyed) {
+        std::cerr << "Failed to destroy vehicle detector" << std::endl;
     }
-    
-    return result;
-}
-
-std::vector<CustomObject> CustomLogic::DetectTrafficLights(const cv::Mat& input, const std::string& cameraId) 
-{
-    std::vector<ANSCENTER::Object> detectedLights = m_trafficLightDetector.DetectTrafficLights(input, cameraId);
-    
-    // Convert ANSCENTER::Object to CustomObject
-    std::vector<CustomObject> result;
-    int maxVehicleClassId = 7; // Based on the class map in ANSCustomTrafficLight.cpp
-    for (const auto& obj : detectedLights) {
-        CustomObject customObj;
-        customObj.classId = obj.classId + maxVehicleClassId;
-        customObj.trackId = obj.trackId;
-        customObj.className = obj.className;
-        customObj.confidence = obj.confidence;
-        customObj.box = obj.box;
-        customObj.cameraId = cameraId;
-        result.push_back(customObj);
+    if (!trafficLightDestroyed) {
+        std::cerr << "Failed to destroy traffic light detector" << std::endl;
     }
-    
-    return result;
+
+    m_lastDetectionResults.clear();
+    _param.clear();
+    return vehicleDestroyed && trafficLightDestroyed;
 }
