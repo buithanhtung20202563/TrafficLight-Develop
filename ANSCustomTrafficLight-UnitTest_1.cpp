@@ -1,6 +1,6 @@
-#include "CustomLogic.h"
 #include <iostream>
 #include <opencv2/opencv.hpp>
+#include "CustomLogic.h"
 
 int main()
 {
@@ -46,18 +46,28 @@ int main()
             break;
         }
 
-        // Run inference (detects vehicles and traffic lights, logs violations)
+        // Run inference (Vehicle + TrafficLight logic)
         std::vector<CustomObject> detectionResult = customLogic.RunInference(frame, "cameraId");
 
-        // Visualize detections
+        // Run inference (ANSCustomTL logic)
+        std::vector<CustomObject> customTLResult = customLogic.RunCustomTLInference(frame, "cameraId");
+
+        // Hiển thị kết quả phát hiện từ Vehicle+TrafficLight
         for (const auto& obj : detectionResult) {
-            // Use different colors for vehicles (green) and traffic lights (blue)
-            cv::Scalar color = (obj.classId >= 8) ? cv::Scalar(255, 0, 0) : cv::Scalar(0, 255, 0);
-            cv::rectangle(frame, obj.box, color, 2);
+            cv::rectangle(frame, obj.box, cv::Scalar(0, 255, 0), 2);
             cv::putText(frame,
                 cv::format("%s:%d", obj.className.c_str(), obj.classId),
                 cv::Point(obj.box.x, obj.box.y - 5),
                 cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 0, 255), 1, cv::LINE_AA);
+        }
+
+        // Hiển thị kết quả phát hiện từ ANSCustomTL (bạn có thể so sánh/voting nếu muốn)
+        int y_offset = 30;
+        for (const auto& obj : customTLResult) {
+            cv::putText(frame,
+                cv::format("[TL]%s:%d", obj.className.c_str(), obj.classId),
+                cv::Point(obj.box.x, obj.box.y + y_offset),
+                cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 0, 0), 1, cv::LINE_AA);
         }
 
         cv::imshow("Traffic Violation Detection", frame);

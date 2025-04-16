@@ -4,7 +4,7 @@
 #include <iomanip>
 
 CustomLogic::CustomLogic() {
-    // Constructor
+    m_ansCustomTL = std::make_shared<ANSCustomTL>();
 }
 
 CustomLogic::~CustomLogic() {
@@ -48,6 +48,13 @@ bool CustomLogic::Initialize(const std::string& modelDirectory, float detectionS
         return false;
     }
 
+    // Initialize ANSCustomTL
+    bool customTLInit = m_ansCustomTL->Initialize(modelDirectory, detectionScoreThreshold, labelMap);
+    if (!customTLInit) {
+        std::cerr << "Failed to initialize ANSCustomTL" << std::endl;
+        return false;
+    }
+
     // Create combined label map (similar to ANSCustomTL)
     labelMap = "car,motorbike,bus,truck,bike,container,tricycle,human,green,red,yellow";
     return true;
@@ -56,9 +63,10 @@ bool CustomLogic::Initialize(const std::string& modelDirectory, float detectionS
 bool CustomLogic::OptimizeModel(bool fp16) {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
 
-    // Optimize both detectors
+    // Optimize all detectors
     bool vehicleOpt = m_vehicleDetector.Optimize(fp16);
     bool trafficLightOpt = m_trafficLightDetector.Optimize(fp16);
+    bool customTLOpt = m_ansCustomTL->OptimizeModel(fp16);
 
     if (!vehicleOpt) {
         std::cerr << "Failed to optimize vehicle detector" << std::endl;
@@ -66,95 +74,20 @@ bool CustomLogic::OptimizeModel(bool fp16) {
     if (!trafficLightOpt) {
         std::cerr << "Failed to optimize traffic light detector" << std::endl;
     }
+    if (!customTLOpt) {
+        std::cerr << "Failed to optimize ANSCustomTL" << std::endl;
+    }
 
-    return vehicleOpt && trafficLightOpt;
+    return vehicleOpt && trafficLightOpt && customTLOpt;
 }
 
 bool CustomLogic::ConfigureParamaters(std::vector<CustomParams>& param) {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
 
-    // Configure vehicle detector parameters
-    if (!m_vehicleDetector.ConfigureParameters()) {
-        std::cerr << "Failed to configure vehicle detector parameters" << std::endl;
-        return false;
-    }
-
-    // Configure traffic light detector parameters
-    if (!m_trafficLightDetector.ConfigureParameters()) {
-        std::cerr << "Failed to configure traffic light detector parameters" << std::endl;
-        return false;
-    }
-
-    // Create parameter schema for CustomLogic
-    if (_param.empty()) {
-        // Vehicle detector parameters
-        CustomParams vehicleParam;
-        vehicleParam.handleId = 0;
-        vehicleParam.handleName = "vehicle";
-
-        CustomParamType modelTypeParam;
-        modelTypeParam.type = 0; // int
-        modelTypeParam.name = "modelType";
-        modelTypeParam.value = "4"; // TensorRT
-        vehicleParam.handleParametersJson.push_back(modelTypeParam);
-
-        CustomParamType thresholdParam;
-        thresholdParam.type = 1; // double
-        thresholdParam.name = "threshold";
-        thresholdParam.value = std::to_string(_detectionScoreThreshold);
-        vehicleParam.handleParametersJson.push_back(thresholdParam);
-
-        // Vehicle ROIs (Detect Area, Crossing Line, Direction)
-        CustomRegion detectArea;
-        detectArea.regionType = 1; // Rectangle
-        detectArea.regionName = "DetectArea";
-        detectArea.polygon = {
-            cv::Point(100, 200), cv::Point(400, 200),
-            cv::Point(400, 400), cv::Point(100, 400)
-        };
-        vehicleParam.ROIs.push_back(detectArea);
-
-        CustomRegion crossingLine;
-        crossingLine.regionType = 2; // Line
-        crossingLine.regionName = "CrossingLine";
-        crossingLine.polygon = { cv::Point(100, 380), cv::Point(400, 380) };
-        vehicleParam.ROIs.push_back(crossingLine);
-
-        CustomRegion directionLine;
-        directionLine.regionType = 4; // Direction line
-        directionLine.regionName = "Direction";
-        directionLine.polygon = { cv::Point(250, 350), cv::Point(250, 250) };
-        vehicleParam.ROIs.push_back(directionLine);
-
-        _param.push_back(vehicleParam);
-
-        // Traffic light detector parameters
-        CustomParams lightParam;
-        lightParam.handleId = 1;
-        lightParam.handleName = "light";
-
-        CustomParamType lightThresholdParam;
-        lightThresholdParam.type = 1; // double
-        lightThresholdParam.name = "threshold";
-        lightThresholdParam.value = std::to_string(_detectionScoreThreshold);
-        lightParam.handleParametersJson.push_back(lightThresholdParam);
-
-        // Traffic light ROI
-        CustomRegion trafficRoi;
-        trafficRoi.regionType = 1; // Rectangle
-        trafficRoi.regionName = "TrafficRoi";
-        trafficRoi.polygon = {
-            cv::Point(100, 50), cv::Point(300, 50),
-            cv::Point(300, 200), cv::Point(100, 200)
-        };
-        lightParam.ROIs.push_back(trafficRoi);
-
-        _param.push_back(lightParam);
-    }
-
-    // Return parameters to caller
-    param = _param;
-    return true;
+    bool ok1 = m_vehicleDetector.ConfigureParameters();
+    bool ok2 = m_trafficLightDetector.ConfigureParameters();
+    bool ok3 = m_ansCustomTL->ConfigureParamaters(param);
+    return ok1 && ok2 && ok3;
 }
 
 std::vector<CustomObject> CustomLogic::RunInference(const cv::Mat& input) {
@@ -193,6 +126,11 @@ std::vector<CustomObject> CustomLogic::RunInference(const cv::Mat& input, const 
     }
 }
 
+std::vector<CustomObject> CustomLogic::RunCustomTLInference(const cv::Mat& input, const std::string& cameraId) {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    return m_ansCustomTL->RunInference(input, cameraId);
+}
+
 void CustomLogic::ProcessViolations(const std::vector<ANSCENTER::Object>& vehicles,
     const std::vector<ANSCENTER::Object>& trafficLights,
     const std::string& cameraId) {
@@ -217,7 +155,6 @@ void CustomLogic::ProcessViolations(const std::vector<ANSCENTER::Object>& vehicl
                 std::stringstream ss;
                 ss << std::put_time(&localTime, "%Y-%m-%d %H:%M:%S");
 
-
                 std::cout << "Violation Detected!" << std::endl;
                 std::cout << "Timestamp: " << ss.str() << std::endl;
                 std::cout << "Camera ID: " << cameraId << std::endl;
@@ -235,11 +172,10 @@ void CustomLogic::ProcessViolations(const std::vector<ANSCENTER::Object>& vehicl
 }
 
 bool CustomLogic::Destroy() {
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
-
-    // Destroy both detectors
+    // Destroy all detectors
     bool vehicleDestroyed = m_vehicleDetector.Destroy();
     bool trafficLightDestroyed = m_trafficLightDetector.Destroy();
+    bool customTLDestroyed = m_ansCustomTL->Destroy();
 
     if (!vehicleDestroyed) {
         std::cerr << "Failed to destroy vehicle detector" << std::endl;
@@ -247,8 +183,43 @@ bool CustomLogic::Destroy() {
     if (!trafficLightDestroyed) {
         std::cerr << "Failed to destroy traffic light detector" << std::endl;
     }
+    if (!customTLDestroyed) {
+        std::cerr << "Failed to destroy ANSCustomTL" << std::endl;
+    }
 
     m_lastDetectionResults.clear();
     _param.clear();
-    return vehicleDestroyed && trafficLightDestroyed;
+    return vehicleDestroyed && trafficLightDestroyed && customTLDestroyed;
+}
+
+void CustomLogic::DetectRedLightViolationsFromDir(const std::string& directoryPath) {
+    for (const auto& entry : fs::directory_iterator(directoryPath)) {
+        if (entry.is_regular_file()) {
+            std::string filePath = entry.path().string();
+            // Chỉ xử lý file ảnh hoặc video
+            if (filePath.ends_with(".jpg") || filePath.ends_with(".png") || filePath.ends_with(".bmp") || filePath.ends_with(".jpeg")) {
+                cv::Mat img = cv::imread(filePath);
+                if (!img.empty()) {
+                    auto results = RunInference(img);
+                    // Kiểm tra vi phạm: có phương tiện trong vùng crossing line khi đèn đỏ
+                    bool redLight = false;
+                    for (const auto& obj : results) {
+                        if (obj.className == "red" || obj.classId == 9) {
+                            redLight = true;
+                            break;
+                        }
+                    }
+                    if (redLight) {
+                        for (const auto& obj : results) {
+                            // Giả sử crossing line là một vùng ROI, ở đây chỉ log ra phương tiện khi có đèn đỏ
+                            if (obj.classId >= 0 && obj.classId <= 7) { // classId phương tiện
+                                std::cout << "[VIOLATION] Vehicle " << obj.className << " (trackId: " << obj.trackId << ") crossed line during RED light in file: " << filePath << std::endl;
+                            }
+                        }
+                    }
+                }
+            }
+            // Có thể mở rộng xử lý video nếu muốn
+        }
+    }
 }

@@ -3,15 +3,17 @@
 
 #include <string>
 #include <vector>
+#include <memory>
 #include <opencv2/opencv.hpp>
+#include "ANSCustomTrafficLight.h"
 #include "Vehicle.h"
 #include "TrafficLight.h"
-#include "ANSCustomTrafficLight.h"
 
 class CustomLogic : public IANSCustomClass {
 private:
     Vehicle m_vehicleDetector;
     TrafficLight m_trafficLightDetector;
+    std::shared_ptr<ANSCustomTL> m_ansCustomTL;
     std::recursive_mutex m_mutex;
 
     // Store detected objects for visualization or further processing
@@ -32,10 +34,13 @@ public:
     bool ConfigureParamaters(std::vector<CustomParams>& param) override;
     bool Destroy() override;
 
-    // Additional method for violation detection (used internally)
+    // Phát hiện vi phạm: phương tiện vượt vạch khi đèn đỏ
     void ProcessViolations(const std::vector<ANSCENTER::Object>& vehicles,
         const std::vector<ANSCENTER::Object>& trafficLights,
         const std::string& cameraId);
+
+    // Inference sử dụng trực tiếp ANSCustomTL
+    std::vector<CustomObject> RunCustomTLInference(const cv::Mat& input, const std::string& cameraId);
 };
 
 #endif // CUSTOM_LOGIC_H
