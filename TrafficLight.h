@@ -1,46 +1,36 @@
 #ifndef TRAFFIC_LIGHT_H
 #define TRAFFIC_LIGHT_H
 
-#include <string>
 #include <vector>
+#include <string>
+#include <mutex>
 #include <opencv2/opencv.hpp>
 #include "ANSLIB.h"
 
 class TrafficLight {
-private:
-    ANSCENTER::ANSLIB detector;
-    std::string modelName;
-    std::string className;
-    int modelType;
-    int detectionType;
-    std::string modelDirectory;
-    float detectionScoreThreshold;
-    float confidenceThreshold;
-    float nmsThreshold;
-    std::string labelMap;
-
-    // Traffic light ROI
-    std::vector<ANSCENTER::Region> trafficROIs;
-
-    // Parameters
-    std::vector<ANSCENTER::Params> parameters;
-
 public:
     TrafficLight();
     ~TrafficLight();
 
     bool Initialize(const std::string& modelDir, float threshold);
+    bool ConfigureParameters(const std::vector<cv::Point>& trafficRoi);
     bool Optimize(bool fp16);
-    bool ConfigureParameters();
-    bool SetParameters(const std::vector<ANSCENTER::Params>& params);
 
+    // Detect traffic lights in input frame
     std::vector<ANSCENTER::Object> DetectTrafficLights(const cv::Mat& input, const std::string& cameraId);
 
-    bool IsGreen(const std::vector<ANSCENTER::Object>& detectedLights);
-    bool IsRed(const std::vector<ANSCENTER::Object>& detectedLights);
-    bool IsYellow(const std::vector<ANSCENTER::Object>& detectedLights);
+    // Get traffic light state
+    bool IsRed(const std::vector<ANSCENTER::Object>& detectedLights) const;
+    bool IsGreen(const std::vector<ANSCENTER::Object>& detectedLights) const;
+    bool IsYellow(const std::vector<ANSCENTER::Object>& detectedLights) const;
 
     bool Destroy();
+
+private:
+    ANSCENTER::ANSLIB detector_;
+    float threshold_;
+    std::vector<cv::Point> trafficRoi_;
+    mutable std::mutex mtx_;
 };
 
 #endif // TRAFFIC_LIGHT_H

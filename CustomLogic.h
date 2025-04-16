@@ -5,42 +5,41 @@
 #include <vector>
 #include <memory>
 #include <opencv2/opencv.hpp>
-#include "ANSCustomTrafficLight.h"
 #include "Vehicle.h"
 #include "TrafficLight.h"
+#include "ANSCustomTrafficLight.h"
 
-class CustomLogic : public IANSCustomClass {
-private:
-    Vehicle m_vehicleDetector;
-    TrafficLight m_trafficLightDetector;
-    std::shared_ptr<ANSCustomTL> m_ansCustomTL;
-    std::recursive_mutex m_mutex;
+struct ViolationInfo {
+    ANSCENTER::Object vehicle;
+    std::string cameraId;
+    std::string timestamp;
+};
 
-    // Store detected objects for visualization or further processing
-    std::vector<CustomObject> m_lastDetectionResults;
-
-    // Helper method to convert ANSCENTER::Object to CustomObject
-    CustomObject ConvertToCustomObject(const ANSCENTER::Object& obj, const std::string& cameraId, int classIdOffset = 0);
-
+class CustomLogic {
 public:
     CustomLogic();
     ~CustomLogic();
 
-    // IANSCustomClass interface implementation
-    bool Initialize(const std::string& modelDirectory, float detectionScoreThreshold, std::string& labelMap) override;
-    bool OptimizeModel(bool fp16) override;
-    std::vector<CustomObject> RunInference(const cv::Mat& input) override;
-    std::vector<CustomObject> RunInference(const cv::Mat& input, const std::string& cameraId) override;
-    bool ConfigureParamaters(std::vector<CustomParams>& param) override;
-    bool Destroy() override;
+    bool Initialize(const std::string& modelDir, float threshold);
+    bool ConfigureParameters();
+    bool OptimizeModel(bool fp16);
 
-    // Phát hiện vi phạm: phương tiện vượt vạch khi đèn đỏ
+    // Main inference: returns detected vehicles and traffic lights
+    void RunInference(const cv::Mat& input, const std::string& cameraId,
+                      std::vector<ANSCENTER::Object>& vehicles,
+                      std::vector<ANSCENTER::Object>& trafficLights);
+
+    // Detect and log violations (vehicle crosses line when red light)
     void ProcessViolations(const std::vector<ANSCENTER::Object>& vehicles,
-        const std::vector<ANSCENTER::Object>& trafficLights,
-        const std::string& cameraId);
+                           const std::vector<ANSCENTER::Object>& trafficLights,
+                           const std::string& cameraId);
 
-    // Inference sử dụng trực tiếp ANSCustomTL
-    std::vector<CustomObject> RunCustomTLInference(const cv::Mat& input, const std::string& cameraId);
+    bool Destroy();
+
+private:
+    Vehicle vehicleModule_;
+    TrafficLight trafficLightModule_;
+    std::shared_ptr<ANSCustomTL> customTLModule_;
 };
 
 #endif // CUSTOM_LOGIC_H

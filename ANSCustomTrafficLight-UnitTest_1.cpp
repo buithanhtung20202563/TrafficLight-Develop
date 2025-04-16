@@ -2,84 +2,45 @@
 #include <opencv2/opencv.hpp>
 #include "CustomLogic.h"
 
-int main()
-{
-    std::cout << "Testing custom traffic logic!\n";
-    CustomLogic customLogic;
-    std::string modelDirectory = "C:\\Programs\\DemoAssets\\TrafficLights\\ANS_TrafficLight_v1.0";
-    std::string labelMap;
-    float detectionScoreThreshold = 0.5f;
-    std::string videoFilePath = "C:\\Programs\\DemoAssets\\TrafficLights\\trafficlight1.mp4";
+int main() {
+    CustomLogic logic;
+    std::string modelDir = "C:\\Programs\\DemoAssets\\TrafficLights\\ANS_TrafficLight_v1.0";
+    float threshold = 0.5f;
+    std::string videoPath = "C:\\Programs\\DemoAssets\\TrafficLights\\trafficlight1.mp4";
 
-    // Initialize the custom logic
-    if (!customLogic.Initialize(modelDirectory, detectionScoreThreshold, labelMap)) {
-        std::cerr << "Failed to initialize the custom traffic logic model.\n";
+    if (!logic.Initialize(modelDir, threshold)) {
+        std::cerr << "Init failed\n";
         return -1;
     }
-
-    // Configure parameters
-    std::vector<CustomParams> params;
-    if (!customLogic.ConfigureParamaters(params)) {
-        std::cerr << "Failed to configure parameters.\n";
+    if (!logic.ConfigureParameters()) {
+        std::cerr << "Config failed\n";
         return -1;
     }
+    logic.OptimizeModel(true);
 
-    // Optimize model (optional)
-    if (!customLogic.OptimizeModel(true)) {
-        std::cerr << "Failed to optimize model (continuing anyway).\n";
-    }
-
-    std::cout << "Begin reading video" << std::endl;
-    cv::VideoCapture capture(videoFilePath);
-
-    if (!capture.isOpened()) {
-        std::cerr << "Could not read the video file: " << videoFilePath << "\n";
+    cv::VideoCapture cap(videoPath);
+    if (!cap.isOpened()) {
+        std::cerr << "Could not open video\n";
         return -1;
     }
-
-    while (true)
-    {
+    while (true) {
         cv::Mat frame;
-        if (!capture.read(frame)) // If not successful, break loop
-        {
-            std::cout << "\nCannot read the video file. Please check your video.\n";
-            break;
+        if (!cap.read(frame)) break;
+        std::vector<ANSCENTER::Object> vehicles, trafficLights;
+        logic.RunInference(frame, "cam1", vehicles, trafficLights);
+        logic.ProcessViolations(vehicles, trafficLights, "cam1");
+        // Optionally visualize
+        for (const auto& obj : vehicles) {
+            cv::rectangle(frame, obj.box, cv::Scalar(0,255,0), 2);
+            cv::putText(frame, obj.className, {obj.box.x, obj.box.y-5}, cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0,255,0), 2);
         }
-
-        // Run inference (Vehicle + TrafficLight logic)
-        std::vector<CustomObject> detectionResult = customLogic.RunInference(frame, "cameraId");
-
-        // Run inference (ANSCustomTL logic)
-        std::vector<CustomObject> customTLResult = customLogic.RunCustomTLInference(frame, "cameraId");
-
-        // Hiển thị kết quả phát hiện từ Vehicle+TrafficLight
-        for (const auto& obj : detectionResult) {
-            cv::rectangle(frame, obj.box, cv::Scalar(0, 255, 0), 2);
-            cv::putText(frame,
-                cv::format("%s:%d", obj.className.c_str(), obj.classId),
-                cv::Point(obj.box.x, obj.box.y - 5),
-                cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 0, 255), 1, cv::LINE_AA);
+        for (const auto& obj : trafficLights) {
+            cv::rectangle(frame, obj.box, cv::Scalar(0,0,255), 2);
+            cv::putText(frame, obj.className, {obj.box.x, obj.box.y-5}, cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0,0,255), 2);
         }
-
-        // Hiển thị kết quả phát hiện từ ANSCustomTL (bạn có thể so sánh/voting nếu muốn)
-        int y_offset = 30;
-        for (const auto& obj : customTLResult) {
-            cv::putText(frame,
-                cv::format("[TL]%s:%d", obj.className.c_str(), obj.classId),
-                cv::Point(obj.box.x, obj.box.y + y_offset),
-                cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 0, 0), 1, cv::LINE_AA);
-        }
-
-        cv::imshow("Traffic Violation Detection", frame);
-        if (cv::waitKey(30) == 27) // Wait for 'esc' key press to exit
-        {
-            break;
-        }
+        cv::imshow("Result", frame);
+        if (cv::waitKey(30) == 27) break;
     }
-
-    capture.release();
-    cv::destroyAllWindows();
-    customLogic.Destroy();
-    std::cout << "End of program.\n";
+    logic.Destroy();
     return 0;
 }

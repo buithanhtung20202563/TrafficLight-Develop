@@ -1,66 +1,47 @@
 #ifndef VEHICLE_H
 #define VEHICLE_H
 
-#include <string>
 #include <vector>
+#include <string>
+#include <mutex>
 #include <opencv2/opencv.hpp>
 #include "ANSLIB.h"
 
 class Vehicle {
-private:
-    ANSCENTER::ANSLIB detector;
-    std::string modelName;
-    std::string className;
-    int modelType;
-    int detectionType;
-    std::string modelDirectory;
-    float detectionScoreThreshold;
-    float confidenceThreshold;
-    float nmsThreshold;
-    std::string labelMap;
-
-    // Vehicle-related ROIs
-    std::vector<ANSCENTER::Region> detectAreaROI;
-    std::vector<ANSCENTER::Region> crossingLineROI;
-    std::vector<ANSCENTER::Region> directionLineROI;
-
-    // Parameters
-    std::vector<ANSCENTER::Params> parameters;
-
-    // Tracking data
-    struct TrackedVehicle {
-        int trackId;
-        cv::Rect lastPosition;
-        bool crossedLine;
-        std::string vehicleType;
-        std::chrono::system_clock::time_point lastSeen;
-    };
-
-    std::vector<TrackedVehicle> trackedVehicles;
-
 public:
     Vehicle();
     ~Vehicle();
 
     bool Initialize(const std::string& modelDir, float threshold);
+    bool ConfigureParameters(const std::vector<cv::Point>& detectArea,
+                            const std::vector<cv::Point>& crossingLine,
+                            const std::vector<cv::Point>& directionLine);
     bool Optimize(bool fp16);
-    bool ConfigureParameters();
-    bool SetParameters(const std::vector<ANSCENTER::Params>& params);
 
+    // Detect and track vehicles in input frame
     std::vector<ANSCENTER::Object> DetectVehicles(const cv::Mat& input, const std::string& cameraId);
 
-    // Methods for line crossing detection
+    // Check if a vehicle has crossed the crossing line
     bool HasVehicleCrossedLine(const ANSCENTER::Object& vehicle);
-    int CountVehiclesCrossedLine();
-    void UpdateVehicleTracking(const std::vector<ANSCENTER::Object>& vehicles);
 
-    // Vehicle classification methods
-    bool IsCar(const ANSCENTER::Object& vehicle);
-    bool IsTruck(const ANSCENTER::Object& vehicle);
-    bool IsBus(const ANSCENTER::Object& vehicle);
-    bool IsMotorbike(const ANSCENTER::Object& vehicle);
+    // Count vehicles that have crossed the line
+    int GetCrossedVehicleCount() const;
+
+    // Classify vehicle type
+    std::string ClassifyVehicleType(int classId) const;
 
     bool Destroy();
+
+private:
+    ANSCENTER::ANSLIB detector_;
+    float threshold_;
+    std::vector<cv::Point> detectArea_;
+    std::vector<cv::Point> crossingLine_;
+    std::vector<cv::Point> directionLine_;
+    mutable std::mutex mtx_;
+
+    // Tracking info
+    std::vector<int> crossedVehicleTrackIds_;
 };
 
 #endif // VEHICLE_H
