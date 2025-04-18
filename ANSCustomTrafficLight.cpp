@@ -242,6 +242,71 @@ std::vector<CustomObject> ANSCustomTL::RunInference(const cv::Mat& input, const 
 					   cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 0, 0), 2);
 		}
 
+		// Draw detected vehicles with their information
+		for (const auto& vehicle : filteredVehicles) {
+			// Draw bounding box
+			cv::Scalar boxColor(0, 255, 0); // Green color for normal vehicles
+			if (m_cVehicleDetector.IsVehicleCrossedLine(vehicle)) {
+				boxColor = cv::Scalar(0, 0, 255); // Red color for violating vehicles
+			}
+			cv::rectangle(input, vehicle.box, boxColor, 2);
+
+			// Prepare vehicle information text
+			std::string vehicleInfo = cv::format("%s (ID:%d) %.2f", 
+				vehicle.className.c_str(), 
+				vehicle.trackId,
+				vehicle.confidence);
+
+			// Calculate text position
+			cv::Point textPos(vehicle.box.x, vehicle.box.y - 10);
+			if (textPos.y < 20) textPos.y = vehicle.box.y + 20; // Adjust if text would go above image
+
+			// Draw background rectangle for text
+			int baseline = 0;
+			cv::Size textSize = cv::getTextSize(vehicleInfo, cv::FONT_HERSHEY_SIMPLEX, 0.5, 1, &baseline);
+			cv::rectangle(input, 
+				cv::Point(textPos.x - 2, textPos.y - textSize.height - 2),
+				cv::Point(textPos.x + textSize.width + 2, textPos.y + 2),
+				cv::Scalar(0, 0, 0), cv::FILLED);
+
+			// Draw vehicle information text
+			cv::putText(input, vehicleInfo, textPos,
+				cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 255), 1);
+
+			// Draw vehicle center point
+			cv::Point center(vehicle.box.x + vehicle.box.width/2, 
+						   vehicle.box.y + vehicle.box.height/2);
+			cv::circle(input, center, 3, boxColor, -1);
+		}
+
+		// Draw traffic lights
+		for (const auto& light : vOutTrafficLight) {
+			cv::Scalar lightColor;
+			if (light.className == "red") lightColor = cv::Scalar(0, 0, 255);
+			else if (light.className == "green") lightColor = cv::Scalar(0, 255, 0);
+			else if (light.className == "yellow") lightColor = cv::Scalar(0, 255, 255);
+			else lightColor = cv::Scalar(255, 255, 255);
+
+			cv::rectangle(input, light.box, lightColor, 2);
+			
+			std::string lightInfo = cv::format("%s %.2f", 
+				light.className.c_str(), 
+				light.confidence);
+
+			cv::Point textPos(light.box.x, light.box.y - 10);
+			if (textPos.y < 20) textPos.y = light.box.y + 20;
+
+			int baseline = 0;
+			cv::Size textSize = cv::getTextSize(lightInfo, cv::FONT_HERSHEY_SIMPLEX, 0.5, 1, &baseline);
+			cv::rectangle(input, 
+				cv::Point(textPos.x - 2, textPos.y - textSize.height - 2),
+				cv::Point(textPos.x + textSize.width + 2, textPos.y + 2),
+				cv::Scalar(0, 0, 0), cv::FILLED);
+
+			cv::putText(input, lightInfo, textPos,
+				cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 255), 1);
+		}
+
 		// Check if traffic light is red
 		bool isRedLight = false;
 		std::cout << "\n============= Traffic Light Analysis =============" << std::endl;
@@ -255,7 +320,7 @@ std::vector<CustomObject> ANSCustomTL::RunInference(const cv::Mat& input, const 
 				<< ", Confidence: " << obj.confidence 
 				<< ", Position: (" << obj.box.x << "," << obj.box.y << ")" << std::endl;
 			
-			if (obj.className == "red" || obj.classId == 9) {
+			if (obj.className == "red" && obj.confidence > 0.5) {
 				isRedLight = true;
 				std::cout << "RED LIGHT STATE CONFIRMED - Monitoring for violations" << std::endl;
 				break;
@@ -265,9 +330,9 @@ std::vector<CustomObject> ANSCustomTL::RunInference(const cv::Mat& input, const 
 		// If red light is detected, check for vehicles in the detection area
 		if (isRedLight) {
 			std::cout << "\n============= Vehicle Detection Analysis =============" << std::endl;
-			std::cout << "Total vehicles detected: " << vOutVehicle.size() << std::endl;
+			std::cout << "Total vehicles detected: " << filteredVehicles.size() << std::endl;
 			
-			for (const auto& vehicle : vOutVehicle) {
+			for (const auto& vehicle : filteredVehicles) {
 				std::cout << "\n----- Vehicle Details -----" << std::endl;
 				std::cout << "Type: " << vehicle.className << std::endl;
 				std::cout << "Track ID: " << vehicle.trackId << std::endl;
@@ -275,43 +340,55 @@ std::vector<CustomObject> ANSCustomTL::RunInference(const cv::Mat& input, const 
 				std::cout << "Position: (" << vehicle.box.x << "," << vehicle.box.y << ")" << std::endl;
 				std::cout << "Size: " << vehicle.box.width << "x" << vehicle.box.height << std::endl;
 				
-				bool isViolation = m_cVehicleDetector.IsVehicleCrossedLine(vehicle);
+				// Kiểm tra xem phương tiện có nằm trong vùng detect không
+				cv::Point center(vehicle.box.x + vehicle.box.width/2, 
+							   vehicle.box.y + vehicle.box.height/2);
+				bool isInDetectArea = cv::pointPolygonTest(vDetectArea, center, false) >= 0;
 				
-				if (isViolation) {
-					std::cout << "\n!!! RED LIGHT VIOLATION DETECTED !!!" << std::endl;
-					std::cout << "Time: " << std::put_time(std::localtime(&std::time(nullptr)), "%Y-%m-%d %H:%M:%S") << std::endl;
-					std::cout << "Location: Camera " << camera_id << std::endl;
-					std::cout << "Violation Details:" << std::endl;
-					std::cout << "- Vehicle Type: " << vehicle.className << std::endl;
-					std::cout << "- Track ID: " << vehicle.trackId << std::endl;
-					std::cout << "- Detection Confidence: " << vehicle.confidence << std::endl;
-					std::cout << "- Vehicle Position: (" << vehicle.box.x << "," << vehicle.box.y << ")" << std::endl;
-					std::cout << "- Vehicle Size: " << vehicle.box.width << "x" << vehicle.box.height << std::endl;
-					std::cout << "=========================================" << std::endl;
+				if (isInDetectArea) {
+					std::cout << "Vehicle is inside detection area" << std::endl;
+					
+					// Kiểm tra vi phạm
+					bool isViolation = m_cVehicleDetector.IsVehicleCrossedLine(vehicle);
+					
+					if (isViolation) {
+						std::cout << "\n!!! RED LIGHT VIOLATION DETECTED !!!" << std::endl;
+						std::cout << "Time: " << std::put_time(std::localtime(&std::time(nullptr)), "%Y-%m-%d %H:%M:%S") << std::endl;
+						std::cout << "Location: Camera " << camera_id << std::endl;
+						std::cout << "Violation Details:" << std::endl;
+						std::cout << "- Vehicle Type: " << vehicle.className << std::endl;
+						std::cout << "- Track ID: " << vehicle.trackId << std::endl;
+						std::cout << "- Detection Confidence: " << vehicle.confidence << std::endl;
+						std::cout << "- Vehicle Position: (" << vehicle.box.x << "," << vehicle.box.y << ")" << std::endl;
+						std::cout << "- Vehicle Size: " << vehicle.box.width << "x" << vehicle.box.height << std::endl;
+						std::cout << "=========================================" << std::endl;
 
-					// Enhanced violation visualization
-					cv::Scalar violationColor(0, 0, 255);  // Red color
-					cv::rectangle(input, vehicle.box, violationColor, 3);
-					
-					// Add violation text with background
-					std::string violationText = "RED LIGHT VIOLATION #" + std::to_string(vehicle.trackId);
-					cv::Point textPos(vehicle.box.x, vehicle.box.y - 10);
-					
-					// Add background rectangle for text
-					cv::Size textSize = cv::getTextSize(violationText, cv::FONT_HERSHEY_SIMPLEX, 0.8, 2, nullptr);
-					cv::rectangle(input, 
-						cv::Point(textPos.x - 5, textPos.y - textSize.height - 5),
-						cv::Point(textPos.x + textSize.width + 5, textPos.y + 5),
-						violationColor, cv::FILLED);
+						// Vẽ thông báo vi phạm
+						cv::Scalar violationColor(0, 0, 255);  // Red color
+						cv::rectangle(input, vehicle.box, violationColor, 3);
 						
-					// Add text
-					cv::putText(input, violationText, textPos,
-						cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(255, 255, 255), 2);
+						std::string violationText = "VIOLATION #" + std::to_string(vehicle.trackId);
+						cv::Point textPos(vehicle.box.x, vehicle.box.y - 10);
+						
+						// Vẽ nền cho text
+						cv::Size textSize = cv::getTextSize(violationText, cv::FONT_HERSHEY_SIMPLEX, 0.8, 2, nullptr);
+						cv::rectangle(input, 
+							cv::Point(textPos.x - 5, textPos.y - textSize.height - 5),
+							cv::Point(textPos.x + textSize.width + 5, textPos.y + 5),
+							violationColor, cv::FILLED);
+							
+						cv::putText(input, violationText, textPos,
+							cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(255, 255, 255), 2);
+					} else {
+						std::cout << "Vehicle is in detection area but has not crossed the line" << std::endl;
+					}
+				} else {
+					std::cout << "Vehicle is outside detection area" << std::endl;
 				}
 			}
 		} else {
 			std::cout << "\nNo red light detected - Traffic flowing normally" << std::endl;
-			std::cout << "Total vehicles in frame: " << vOutVehicle.size() << std::endl;
+			std::cout << "Total vehicles in frame: " << filteredVehicles.size() << std::endl;
 		}
 
 		cv::imshow("ANS Traffic Monitoring", input);
