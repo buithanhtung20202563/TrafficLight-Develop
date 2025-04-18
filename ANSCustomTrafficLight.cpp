@@ -222,26 +222,32 @@ std::vector<CustomObject> ANSCustomTL::RunInference(const cv::Mat& input, const 
 		}
 		// Check if traffic light is red
 		bool isRedLight = false;
+		std::cout << "\n=== Checking Traffic Light Status ===" << std::endl;
+		std::cout << "Number of traffic lights detected: " << vOutTrafficLight.size() << std::endl;
+		
 		for (const auto& obj : vOutTrafficLight) {
-			if (obj.className == "red" || obj.classId == 9) { // Check both className and classId
+			std::cout << "Traffic Light Class: " << obj.className << ", ID: " << obj.classId << std::endl;
+			if (obj.className == "red" || obj.classId == 9) {
 				isRedLight = true;
-				std::cout << "RED LIGHT DETECTED!" << std::endl;
+				std::cout << "RED LIGHT CONFIRMED!" << std::endl;
 				break;
 			}
 		}
 
 		// If red light is detected, check for vehicles in the detection area
 		if (isRedLight) {
-			std::cout << "Checking vehicles... Found: " << vOutVehicle.size() << " vehicles" << std::endl;
+			std::cout << "\n=== Checking for Violations ===" << std::endl;
+			std::cout << "Number of vehicles to check: " << vOutVehicle.size() << std::endl;
 			
 			for (const auto& vehicle : vOutVehicle) {
-				// Debug print vehicle info
-				std::cout << "Checking vehicle: " << vehicle.className 
-					<< " at position: (" << vehicle.box.x << "," << vehicle.box.y << ")" << std::endl;
+				std::cout << "\nChecking vehicle: " << vehicle.className 
+					<< " (ID: " << vehicle.trackId << ")" << std::endl;
 				
-				// Check if vehicle is in detection area
-				if (m_cVehicleDetector.IsVehicleCrossedLine(vehicle)) {
-					// Log vehicle information with timestamp
+				bool isViolation = m_cVehicleDetector.IsVehicleCrossedLine(vehicle);
+				std::cout << "IsVehicleCrossedLine returned: " << (isViolation ? "true" : "false") << std::endl;
+				
+				if (isViolation) {
+					// Log violation with timestamp
 					time_t now = time(0);
 					char* dt = ctime(&now);
 					std::cout << "\n!!! RED LIGHT VIOLATION DETECTED !!!" << std::endl;
@@ -254,7 +260,7 @@ std::vector<CustomObject> ANSCustomTL::RunInference(const cv::Mat& input, const 
 					std::cout << "----------------------------------------" << std::endl;
 
 					// Draw violation box on the image
-					cv::rectangle(input, vehicle.box, cv::Scalar(0, 0, 255), 3); // Red box for violating vehicle
+					cv::rectangle(input, vehicle.box, cv::Scalar(0, 0, 255), 3);
 					cv::putText(input, "VIOLATION", 
 						cv::Point(vehicle.box.x, vehicle.box.y - 10),
 						cv::FONT_HERSHEY_SIMPLEX, 0.8, 
@@ -262,11 +268,11 @@ std::vector<CustomObject> ANSCustomTL::RunInference(const cv::Mat& input, const 
 				}
 			}
 		} else {
-			std::cout << "No red light detected" << std::endl;
+			std::cout << "No red light detected - skipping violation checks" << std::endl;
 		}
 
 		cv::imshow("ANS Object Tracking", input);
-		cv::waitKey(1); // Changed from waitKey(0) to waitKey(1) for continuous processing
+		cv::waitKey(1);
 		return results;
 	}
 
