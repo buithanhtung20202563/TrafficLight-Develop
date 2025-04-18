@@ -220,35 +220,53 @@ std::vector<CustomObject> ANSCustomTL::RunInference(const cv::Mat& input, const 
 					0, 0.6, cv::Scalar(0, 0, 255), 1, cv::LINE_AA);
 			}
 		}
-		cv::imshow("ANS Object Tracking", input);
-		cv::waitKey(0);
-		// Add additional information if needed
-
 		// Check if traffic light is red
 		bool isRedLight = false;
 		for (const auto& obj : vOutTrafficLight) {
-			if (obj.className == "red") {
+			if (obj.className == "red" || obj.classId == 9) { // Check both className and classId
 				isRedLight = true;
+				std::cout << "RED LIGHT DETECTED!" << std::endl;
 				break;
 			}
 		}
 
-		// If red light is detected, check for vehicles crossing the line
+		// If red light is detected, check for vehicles in the detection area
 		if (isRedLight) {
+			std::cout << "Checking vehicles... Found: " << vOutVehicle.size() << " vehicles" << std::endl;
+			
 			for (const auto& vehicle : vOutVehicle) {
-				// Check if vehicle has crossed the line
-				if (m_cVehicleDetector.HasVehicleCrossedLine(vehicle)) {
-					// Log vehicle information
-					std::cout << "WARNING: Vehicle passed red light!" << std::endl;
+				// Debug print vehicle info
+				std::cout << "Checking vehicle: " << vehicle.className 
+					<< " at position: (" << vehicle.box.x << "," << vehicle.box.y << ")" << std::endl;
+				
+				// Check if vehicle is in detection area
+				if (m_cVehicleDetector.IsVehicleCrossedLine(vehicle)) {
+					// Log vehicle information with timestamp
+					time_t now = time(0);
+					char* dt = ctime(&now);
+					std::cout << "\n!!! RED LIGHT VIOLATION DETECTED !!!" << std::endl;
+					std::cout << "Time: " << dt;
 					std::cout << "Vehicle Type: " << vehicle.className << std::endl;
 					std::cout << "Track ID: " << vehicle.trackId << std::endl;
 					std::cout << "Confidence: " << vehicle.confidence << std::endl;
 					std::cout << "Position: (" << vehicle.box.x << ", " << vehicle.box.y << ")" << std::endl;
+					std::cout << "Size: " << vehicle.box.width << "x" << vehicle.box.height << std::endl;
 					std::cout << "----------------------------------------" << std::endl;
+
+					// Draw violation box on the image
+					cv::rectangle(input, vehicle.box, cv::Scalar(0, 0, 255), 3); // Red box for violating vehicle
+					cv::putText(input, "VIOLATION", 
+						cv::Point(vehicle.box.x, vehicle.box.y - 10),
+						cv::FONT_HERSHEY_SIMPLEX, 0.8, 
+						cv::Scalar(0, 0, 255), 2);
 				}
 			}
+		} else {
+			std::cout << "No red light detected" << std::endl;
 		}
 
+		cv::imshow("ANS Object Tracking", input);
+		cv::waitKey(1); // Changed from waitKey(0) to waitKey(1) for continuous processing
 		return results;
 	}
 

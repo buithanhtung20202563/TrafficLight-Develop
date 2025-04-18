@@ -205,50 +205,82 @@ std::vector<ANSCENTER::Object> CACVehicle::DetectVehicles(const cv::Mat& input, 
 }
 
 bool CACVehicle::IsVehicleCrossedLine(const ANSCENTER::Object& vehicle) {
-    if (m_vDetectAreaROI.empty()) {
-        return false;
-    }
+    try {
+        // Debug print
+        std::cout << "Checking vehicle in detection area..." << std::endl;
+        
+        if (m_vDetectAreaROI.empty()) {
+            std::cout << "No detection area defined!" << std::endl;
+            return false;
+        }
 
-    // Get the detection area
-    const auto& detectArea = m_vDetectAreaROI[0];
-    if (detectArea.polygon.size() < 4) {
-        return false;
-    }
+        // Get the detection area
+        const auto& detectArea = m_vDetectAreaROI[0];
+        if (detectArea.polygon.size() < 4) {
+            std::cout << "Invalid detection area polygon!" << std::endl;
+            return false;
+        }
 
-    // Create a rectangle from the detection area
-    cv::Rect detectRect = cv::boundingRect(detectArea.polygon);
-    
-    // Get vehicle rectangle
-    cv::Rect vehicleRect = vehicle.box;
+        // Debug print detection area
+        std::cout << "Detection Area Points:" << std::endl;
+        for (const auto& point : detectArea.polygon) {
+            std::cout << "(" << point.x << "," << point.y << ") ";
+        }
+        std::cout << std::endl;
 
-    // Check if vehicle intersects with detection area
-    cv::Rect intersection = detectRect & vehicleRect;
-    bool isInside = (intersection.area() > 0);
+        // Create a rectangle from the detection area
+        cv::Rect detectRect = cv::boundingRect(detectArea.polygon);
+        std::cout << "Detection Rectangle: x=" << detectRect.x << ", y=" << detectRect.y 
+                  << ", width=" << detectRect.width << ", height=" << detectRect.height << std::endl;
+        
+        // Get vehicle rectangle
+        cv::Rect vehicleRect = vehicle.box;
+        std::cout << "Vehicle Rectangle: x=" << vehicleRect.x << ", y=" << vehicleRect.y 
+                  << ", width=" << vehicleRect.width << ", height=" << vehicleRect.height << std::endl;
 
-    // Only mark as crossed if not already tracked
-    if (isInside) {
-        for (auto& tracked : trackedVehicles) {
-            if (tracked.trackId == vehicle.trackId) {
-                if (!tracked.crossedLine) {
-                    tracked.crossedLine = true;
-                    return true;
+        // Check if vehicle intersects with detection area
+        cv::Rect intersection = detectRect & vehicleRect;
+        bool isInside = (intersection.area() > 0);
+        
+        std::cout << "Intersection area: " << intersection.area() << std::endl;
+        std::cout << "Is vehicle inside detection area? " << (isInside ? "YES" : "NO") << std::endl;
+
+        // Only mark as crossed if not already tracked
+        if (isInside) {
+            bool alreadyTracked = false;
+            for (auto& tracked : trackedVehicles) {
+                if (tracked.trackId == vehicle.trackId) {
+                    alreadyTracked = true;
+                    if (!tracked.crossedLine) {
+                        tracked.crossedLine = true;
+                        std::cout << "New violation detected! Vehicle ID: " << vehicle.trackId << std::endl;
+                        return true;
+                    }
+                    std::cout << "Vehicle already tracked and marked as violated" << std::endl;
+                    return false;
                 }
-                return false;
+            }
+            
+            if (!alreadyTracked) {
+                // If vehicle not found in tracking, add it
+                TrackedVehicle newVehicle;
+                newVehicle.trackId = vehicle.trackId;
+                newVehicle.lastPosition = vehicleRect;
+                newVehicle.crossedLine = true;
+                newVehicle.vehicleType = vehicle.className;
+                newVehicle.lastSeen = std::chrono::system_clock::now();
+                trackedVehicles.push_back(newVehicle);
+                std::cout << "New vehicle added to tracking and marked as violated! ID: " << vehicle.trackId << std::endl;
+                return true;
             }
         }
-        
-        // If vehicle not found in tracking, add it
-        TrackedVehicle newVehicle;
-        newVehicle.trackId = vehicle.trackId;
-        newVehicle.lastPosition = vehicleRect;
-        newVehicle.crossedLine = true;
-        newVehicle.vehicleType = vehicle.className;
-        newVehicle.lastSeen = std::chrono::system_clock::now();
-        trackedVehicles.push_back(newVehicle);
-        return true;
-    }
 
-    return false;
+        return false;
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Error in IsVehicleCrossedLine: " << e.what() << std::endl;
+        return false;
+    }
 }
 
 void CACVehicle::UpdateVehicleTracking(const std::vector<ANSCENTER::Object>& vehicles) {
