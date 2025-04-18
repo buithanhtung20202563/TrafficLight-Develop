@@ -204,36 +204,47 @@ std::vector<ANSCENTER::Object> CACVehicle::DetectVehicles(const cv::Mat& input, 
     }
 }
 
-bool CACVehicle::HasVehicleCrossedLine(const ANSCENTER::Object& vehicle) {
+bool CACVehicle::IsVehicleCrossedLine(const ANSCENTER::Object& vehicle) {
     if (m_vCrossingLineROI.empty()) {
         return false;
     }
 
-    // Get the crossing line
-    const auto& line = m_vCrossingLineROI[0];
-    if (line.polygon.size() < 2) {
+    // Get the detection area polygon
+    const auto& detectionArea = m_vCrossingLineROI[0];
+    if (detectionArea.polygon.size() < 4) {
         return false;
     }
 
-    // Line is defined by two points
-    cv::Point lineStart = line.polygon[0];
-    cv::Point lineEnd = line.polygon[1];
+    // Create a vector of points for the detection area polygon
+    std::vector<cv::Point> detectionPolygon = detectionArea.polygon;
 
-    // Get the center bottom point of the vehicle
-    cv::Point vehiclePoint(
+    // Get the vehicle bounding box center point
+    cv::Point vehicleCenter(
+        vehicle.box.x + vehicle.box.width / 2,
+        vehicle.box.y + vehicle.box.height / 2
+    );
+
+    // Check if the vehicle center is inside the detection area
+    double isInside = cv::pointPolygonTest(detectionPolygon, vehicleCenter, false);
+
+    // Also check the bottom center point of the vehicle
+    cv::Point vehicleBottom(
         vehicle.box.x + vehicle.box.width / 2,
         vehicle.box.y + vehicle.box.height
     );
+    double isBottomInside = cv::pointPolygonTest(detectionPolygon, vehicleBottom, false);
 
-    // Check if this point is close to the line
-    // Calculate distance from point to line
-    double lineLength = cv::norm(lineEnd - lineStart);
-    double distance = abs((vehiclePoint.y - lineStart.y) * (lineEnd.x - lineStart.x) -
-        (vehiclePoint.x - lineStart.x) * (lineEnd.y - lineStart.y)) / lineLength;
+    // Vehicle is considered to have crossed if either its center or bottom point is inside the detection area
+    bool hasCrossed = (isInside >= 0) || (isBottomInside >= 0);
 
-    // Consider the vehicle has crossed if it's within a certain threshold distance
-    const double THRESHOLD_DISTANCE = 5.0;
-    return distance < THRESHOLD_DISTANCE;
+    // If this vehicle hasn't been logged before and has crossed
+    if (hasCrossed && std::find(m_vCrossedVehicleIds.begin(), m_vCrossedVehicleIds.end(), vehicle.trackId) == m_vCrossedVehicleIds.end()) {
+        // Add to crossed vehicles list to avoid duplicate detections
+        m_vCrossedVehicleIds.push_back(vehicle.trackId);
+        return true;
+    }
+
+    return false;
 }
 
 void CACVehicle::UpdateVehicleTracking(const std::vector<ANSCENTER::Object>& vehicles) {

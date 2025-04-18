@@ -58,7 +58,7 @@ public:
     std::vector<ANSCENTER::Object> DetectVehicles(const cv::Mat& input, const std::string& cameraId);
 
     // Methods for line crossing detection
-    bool HasVehicleCrossedLine(const ANSCENTER::Object& vehicle);
+    bool IsVehicleCrossedLine(const ANSCENTER::Object& vehicle);
     int CountVehiclesCrossedLine();
     void UpdateVehicleTracking(const std::vector<ANSCENTER::Object>& vehicles);
 
