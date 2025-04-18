@@ -235,8 +235,9 @@ bool CACVehicle::IsVehicleCrossedLine(const ANSCENTER::Object& vehicle) {
                     return false;
                 }
             }
-            
-            // If not tracked, add to tracking
+        
+
+                    // If not tracked, add to tracking
             TrackedVehicle newVehicle;
             newVehicle.trackId = vehicle.trackId;
             newVehicle.lastPosition = vehicle.box;
