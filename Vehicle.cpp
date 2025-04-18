@@ -205,53 +205,50 @@ std::vector<ANSCENTER::Object> CACVehicle::DetectVehicles(const cv::Mat& input, 
 }
 
 bool CACVehicle::IsVehicleCrossedLine(const ANSCENTER::Object& vehicle) {
-    if (m_vCrossingLineROI.empty()) {
+    if (m_vDetectAreaROI.empty()) {
         return false;
     }
 
-    // Get the crossing line
-    const auto& line = m_vCrossingLineROI[0];
-    if (line.polygon.size() < 2) {
+    // Get the detection area
+    const auto& detectArea = m_vDetectAreaROI[0];
+    if (detectArea.polygon.size() < 4) {
         return false;
     }
 
-    // Line is defined by two points
-    cv::Point lineStart = line.polygon[0];
-    cv::Point lineEnd = line.polygon[1];
-
-    // Get the center bottom point of the vehicle
-    cv::Point vehiclePoint(
-        vehicle.box.x + vehicle.box.width / 2,
-        vehicle.box.y + vehicle.box.height
-    );
-
-    // Check if this point is close to the line
-    // Calculate distance from point to line
-    double lineLength = cv::norm(lineEnd - lineStart);
-    double distance = abs((vehiclePoint.y - lineStart.y) * (lineEnd.x - lineStart.x) -
-        (vehiclePoint.x - lineStart.x) * (lineEnd.y - lineStart.y)) / lineLength;
-
-    // Consider the vehicle has crossed if it's within a certain threshold distance
-    const double THRESHOLD_DISTANCE = 5.0;
+    // Create a rectangle from the detection area
+    cv::Rect detectRect = cv::boundingRect(detectArea.polygon);
     
-    // Check if vehicle has crossed the line
-    bool hasCrossed = false;
-    
-    // Only check for crossing if vehicle is close enough to the line
-    if (distance < THRESHOLD_DISTANCE) {
-        // Check if vehicle is in tracked list
+    // Get vehicle rectangle
+    cv::Rect vehicleRect = vehicle.box;
+
+    // Check if vehicle intersects with detection area
+    cv::Rect intersection = detectRect & vehicleRect;
+    bool isInside = (intersection.area() > 0);
+
+    // Only mark as crossed if not already tracked
+    if (isInside) {
         for (auto& tracked : trackedVehicles) {
             if (tracked.trackId == vehicle.trackId) {
                 if (!tracked.crossedLine) {
                     tracked.crossedLine = true;
-                    hasCrossed = true;
+                    return true;
                 }
-                break;
+                return false;
             }
         }
+        
+        // If vehicle not found in tracking, add it
+        TrackedVehicle newVehicle;
+        newVehicle.trackId = vehicle.trackId;
+        newVehicle.lastPosition = vehicleRect;
+        newVehicle.crossedLine = true;
+        newVehicle.vehicleType = vehicle.className;
+        newVehicle.lastSeen = std::chrono::system_clock::now();
+        trackedVehicles.push_back(newVehicle);
+        return true;
     }
 
-    return hasCrossed;
+    return false;
 }
 
 void CACVehicle::UpdateVehicleTracking(const std::vector<ANSCENTER::Object>& vehicles) {
@@ -269,7 +266,7 @@ void CACVehicle::UpdateVehicleTracking(const std::vector<ANSCENTER::Object>& veh
                 trackedVehicle.vehicleType = vehicle.className;
 
                 // Check if vehicle has crossed the line
-                if (!trackedVehicle.crossedLine && HasVehicleCrossedLine(vehicle)) {
+                if (!trackedVehicle.crossedLine && IsVehicleCrossedLine(vehicle)) {
                     trackedVehicle.crossedLine = true;
                 }
 
@@ -283,7 +280,7 @@ void CACVehicle::UpdateVehicleTracking(const std::vector<ANSCENTER::Object>& veh
             TrackedVehicle newVehicle;
             newVehicle.trackId = vehicle.trackId;
             newVehicle.lastPosition = vehicle.box;
-            newVehicle.crossedLine = HasVehicleCrossedLine(vehicle);
+            newVehicle.crossedLine = IsVehicleCrossedLine(vehicle);
             newVehicle.vehicleType = vehicle.className;
             newVehicle.lastSeen = currentTime;
             trackedVehicles.push_back(newVehicle);
