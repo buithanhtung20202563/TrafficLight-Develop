@@ -26,55 +26,10 @@ bool ANSCustomTL::Initialize(const std::string& modelDirectory, float detectionS
 	_modelDirectory = modelDirectory;
 	_detectionScoreThreshold = detectionScoreThreshold;
 
-	_vehicleModelName = "vehicle";
-	_trafficLightModelName = "light";
-
-	_vehicleClassName ="vehicle.names";
-	_trafficLightClassName = "light.names";
-	_vehicleModelType = 4;				// Assuming to use TensorRT model. Please refer to ANSLIB.h for more model types
-	_vehicleDetectionType = 1;			// This is object detection type (so the type is 1)
-
-	_trafficLightModelType = 4;			// Assuming to use TensorRT model. Please refer to ANSLIB.h for more model types
-	_trafficLightDetectionType = 1;		// This is object detection type (so the type is 1)
-	int engineType = vehicleDetector.GetEngineType();
-	if (engineType == 0) {// NVIDIA CPU
-		_vehicleModelType = 3;				// Assuming to use Yolo onnx model. Please refer to ANSLIB.h for more model types
-		_vehicleDetectionType = 1;			// This is object detection type (so the type is 1)
-
-		_trafficLightModelType = 3;			// Assuming to use Yolo onnx model. Please refer to ANSLIB.h for more model types
-		_trafficLightDetectionType = 1;		// This is object detection type (so the type is 1)
-	}
-
-
-
 	//2. User can start impelementing the initialization logic here
-	double _vehicleModelConfThreshold = 0.5;
-	double _vehicleModelNMSThreshold = 0.5;
-	std::string licenseKey = "";
-	int vehicleResult= vehicleDetector.LoadModelFromFolder(licenseKey.c_str(),
-														  _vehicleModelName.c_str(),
-														 _vehicleClassName.c_str(),
-														  _detectionScoreThreshold, 
-														  _vehicleModelConfThreshold, 
-														  _vehicleModelNMSThreshold,1, 
-														  _vehicleModelType, 
-														  _trafficLightDetectionType,
-														  _modelDirectory.c_str(), 
-														  _vehicleLabelMap);
-
-
-	double _trafficLightModelConfThreshold = 0.5;
-	double _trafficLightModelNMSThreshold = 0.5;
-	int lightResult = trafficLightDetector.LoadModelFromFolder(licenseKey.c_str(),
-										_trafficLightModelName.c_str(),
-										_trafficLightClassName.c_str(),
-										_detectionScoreThreshold,
-										_trafficLightModelConfThreshold,
-										_trafficLightModelNMSThreshold, 1,
-										_trafficLightModelType,
-										_trafficLightDetectionType,
-										_modelDirectory.c_str(),
-										_trafficLightLabelMap);
+	bool vehicleResult = m_cVehicleDetector.Initialize(_modelDirectory, _detectionScoreThreshold);
+	bool lightResult = m_cTrafficLightDetector.Initialize(_modelDirectory, _detectionScoreThreshold);
+	
 	// 3 Create label map
 	// Based on two class names, please form the label map (e.g. vehicle.names and light.names)
 	// We stack the two class names together to form the label map
@@ -151,29 +106,79 @@ bool ANSCustomTL::ConfigureParamaters(std::vector<CustomParams>& param)
 	}
 	return true;
 }
+
+cv::Mat cropFromFourPoints(const cv::Mat& src, const std::vector<cv::Point>& pts) {
+	if (pts.size() != 4) throw std::runtime_error("Need 4 points");
+
+	std::vector<cv::Point2f> ordered = {
+		pts[0], pts[1], pts[2], pts[3]
+	};
+
+	float width = max(cv::norm(ordered[0] - ordered[1]),
+		cv::norm(ordered[2] - ordered[3]));
+	float height = max(cv::norm(ordered[0] - ordered[3]),
+		cv::norm(ordered[1] - ordered[2]));
+
+	std::vector<cv::Point2f> dst = {
+		{0.0f, 0.0f},
+		{width - 1, 0.0f},
+		{width - 1, height - 1},
+		{0.0f, height - 1}
+	};
+
+	cv::Mat M = cv::getPerspectiveTransform(ordered, dst);
+	cv::Mat cropped;
+	cv::warpPerspective(src, cropped, M, cv::Size(width, height));
+	return cropped;
+}
+
 std::vector<CustomObject> ANSCustomTL::RunInference(const cv::Mat& input, const std::string& camera_id) {
 	std::lock_guard<std::recursive_mutex> lock(_mutex);
 	std::vector<CustomObject> results;
 	try {
-
-		// We can access to the parameters here
-		int vehicleDetectorId = this->_param[0].handleId;  /// Vehicle detector
-		std::string handleName = this->_param[0].handleName;
-		std::vector<cv::Point> directionLine = this->_param[0].ROIs[2].polygon;
-		std::vector<CustomParamType> handleParametersJson = this->_param[0].handleParametersJson;
-
-		int trafficLightId = this->_param[1].handleId;  /// Traffic light detector
-
-		// Then we can do customization based on the parameters
-
 		std::vector<ANSCENTER::Object> outputVehicle;
 		std::vector<ANSCENTER::Object> outputTrafficLight;
+		CustomParams stVehicleParam = m_cVehicleDetector.GetParameters();
+		std::vector<cv::Point> vDetectArea{};
+		std::vector<cv::Point> vCrossLine{};
+		std::vector<cv::Point> vDirection{};
+		for (const auto& roi : stVehicleParam.ROIs) {
+			if (roi.regionName == "DetectArea") {
+				vDetectArea = roi.polygon;
+			}
+			else if (roi.regionName == "CrossingLine") {
+				// Do something with crossing line
+				vCrossLine = roi.polygon;
+			}
+			else {
+				// Do something with direction line
+				vDirection = roi.polygon;
+			}
+		}
+
+		CustomParams stTrafficParam = m_cTrafficLightDetector.GetParameters();
+		std::vector<cv::Point> vTrafficArea{};
+
+		for (const auto& roi : stTrafficParam.ROIs) {
+			if (roi.regionName == "TrafficRoi") {
+				vTrafficArea = roi.polygon;
+			}
+		}
+
+		cv::Mat cvTrafficImg = cropFromFourPoints(input, vTrafficArea);
+		cv::Mat cvVehicleImg = cropFromFourPoints(input, vDetectArea);
+
+		cv::imshow("Crop Image", cvTrafficImg);
+		cv::imshow("Crop Image", cvVehicleImg);
+		//cv::waitKey(0);
 		// Run vehicle detection
-		vehicleDetector.RunInference(input, camera_id.c_str(), outputVehicle);
+		std::vector<ANSCENTER::Object> vOutVehicle = m_cVehicleDetector.DetectVehicles(input, "cameraID");
+
 		// Run traffic light detection
-		trafficLightDetector.RunInference(input, camera_id.c_str(), outputTrafficLight);
+		std::vector<ANSCENTER::Object> vOutTrafficLight = m_cTrafficLightDetector.DetectTrafficLights(cvTrafficImg, "cameraID");
+		// TungBT: Modify logic passing red light
 		// Combine the results
-		for (const auto& obj : outputVehicle) {
+		for (const auto& obj : vOutVehicle) {
 			CustomObject customObj;
 			customObj.classId = obj.classId;
 			customObj.trackId = obj.trackId;
@@ -187,9 +192,9 @@ std::vector<CustomObject> ANSCustomTL::RunInference(const cv::Mat& input, const 
 		// Traffic light detection class IDs are 8, 9, 10
 		// Because we stack the two class names together, we need to adjust the class IDs
 		int maxVehicleClassId = 7;
-		for (const auto& obj : outputTrafficLight) {
+		for (const auto& obj : vOutTrafficLight) {
 			CustomObject customObj;
-			customObj.classId = obj.classId+ maxVehicleClassId;
+			customObj.classId = obj.classId + maxVehicleClassId;
 			customObj.trackId = obj.trackId;
 			customObj.className = obj.className;
 			customObj.confidence = obj.confidence;
@@ -197,11 +202,75 @@ std::vector<CustomObject> ANSCustomTL::RunInference(const cv::Mat& input, const 
 			customObj.cameraId = camera_id;
 			results.push_back(customObj);
 		}
+		for (auto& obj : results) {
+			if (obj.className == "red" || obj.className == "green" || obj.className == "yellow")
+			{
+				obj.box.x += vTrafficArea[0].x;
+				obj.box.y += vTrafficArea[0].y;
+				cv::rectangle(input, obj.box, cv::Scalar(0, 255, 0), 2);
+				cv::putText(input, cv::format("%s:%d", obj.className, obj.classId), cv::Point(obj.box.x, obj.box.y - 5),
+					0, 0.6, cv::Scalar(0, 0, 255), 1, cv::LINE_AA);
+			}
+			else
+			{
+				//obj.box.x += vVehicleArea[0].x;
+				//obj.box.y += vVehicleArea[0].y;
+				cv::rectangle(input, obj.box, cv::Scalar(0, 255, 0), 2);
+				cv::putText(input, cv::format("%s:%d", obj.className, obj.classId), cv::Point(obj.box.x, obj.box.y - 5),
+					0, 0.6, cv::Scalar(0, 0, 255), 1, cv::LINE_AA);
+			}
+		}
+		cv::imshow("ANS Object Tracking", input);
+		cv::waitKey(0);
 		// Add additional information if needed
+
+		// Check if traffic light is red
+		bool isRedLight = false;
+		for (const auto& obj : vOutTrafficLight) {
+			if (obj.className == "red") {
+				isRedLight = true;
+				break;
+			}
+		}
+
+		// If red light is detected, check for vehicles crossing the line
+		if (isRedLight) {
+			for (const auto& vehicle : vOutVehicle) {
+				// Check if vehicle has crossed the line
+				if (m_cVehicleDetector.HasVehicleCrossedLine(vehicle)) {
+					// Log vehicle information
+					std::cout << "WARNING: Vehicle passed red light!" << std::endl;
+					std::cout << "Vehicle Type: " << vehicle.className << std::endl;
+					std::cout << "Track ID: " << vehicle.trackId << std::endl;
+					std::cout << "Confidence: " << vehicle.confidence << std::endl;
+					std::cout << "Position: (" << vehicle.box.x << ", " << vehicle.box.y << ")" << std::endl;
+					std::cout << "----------------------------------------" << std::endl;
+				}
+			}
+		}
+
 		return results;
 	}
+
 	catch (std::exception& e) {
 		return results;
 	}
 }
 
+bool ANSCustomTL::SetParamaters(const std::vector<CustomParams>& param)
+{
+	_param.clear();
+	for (const auto& p : param) {
+		_param.push_back(p);
+		if (p.handleName == "VehicleDetector" || p.handleId == 0) 
+		{
+			// Set parameters for vehicle detector
+			m_cVehicleDetector.SetParameters(p);
+		}
+		else
+		{
+			m_cTrafficLightDetector.SetParameters(p);
+		}
+	}
+	return true;
+}

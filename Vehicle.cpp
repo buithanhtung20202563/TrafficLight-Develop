@@ -4,17 +4,17 @@
 #include <mutex>
 #include <vector>
 
-Vehicle::Vehicle() : threshold_(0.5f), mtx_() {}
+CACVehicle::CACVehicle() : threshold_(0.5f), mtx_() {}
 
-Vehicle::~Vehicle() { Destroy(); }
+CACVehicle::~CACVehicle() { Destroy(); }
 
-bool Vehicle::Initialize(const std::string& modelDir, float threshold) {
+bool CACVehicle::Initialize(const std::string& modelDir, float threshold) {
     std::lock_guard<std::mutex> lock(mtx_);
     threshold_ = threshold;
     return detector_.Initialize(modelDir.c_str(), threshold_);
 }
 
-bool Vehicle::ConfigureParameters(const std::vector<cv::Point>& detectArea,
+bool CACVehicle::ConfigureParameters(const std::vector<cv::Point>& detectArea,
                                  const std::vector<cv::Point>& crossingLine,
                                  const std::vector<cv::Point>& directionLine) {
     std::lock_guard<std::mutex> lock(mtx_);
@@ -24,12 +24,12 @@ bool Vehicle::ConfigureParameters(const std::vector<cv::Point>& detectArea,
     return true;
 }
 
-bool Vehicle::Optimize(bool fp16) {
+bool CACVehicle::Optimize(bool fp16) {
     std::lock_guard<std::mutex> lock(mtx_);
     return detector_.Optimize(fp16);
 }
 
-std::vector<ANSCENTER::Object> Vehicle::DetectVehicles(const cv::Mat& input, const std::string& cameraId) {
+std::vector<ANSCENTER::Object> CACVehicle::DetectVehicles(const cv::Mat& input, const std::string& cameraId) {
     std::lock_guard<std::mutex> lock(mtx_);
     std::vector<ANSCENTER::Object> detected;
     detector_.RunInference(input, cameraId.c_str(), detected);
@@ -37,7 +37,7 @@ std::vector<ANSCENTER::Object> Vehicle::DetectVehicles(const cv::Mat& input, con
     return detected;
 }
 
-bool Vehicle::HasVehicleCrossedLine(const ANSCENTER::Object& vehicle) {
+bool CACVehicle::HasVehicleCrossedLine(const ANSCENTER::Object& vehicle) {
     if (crossingLine_.size() != 2) return false;
     cv::Point center(vehicle.box.x + vehicle.box.width/2, vehicle.box.y + vehicle.box.height/2);
     double dist = cv::pointPolygonTest(crossingLine_, center, true);
@@ -48,12 +48,12 @@ bool Vehicle::HasVehicleCrossedLine(const ANSCENTER::Object& vehicle) {
     return false;
 }
 
-int Vehicle::GetCrossedVehicleCount() const {
+int CACVehicle::GetCrossedVehicleCount() const {
     std::lock_guard<std::mutex> lock(mtx_);
     return static_cast<int>(crossedVehicleTrackIds_.size());
 }
 
-std::string Vehicle::ClassifyVehicleType(int classId) const {
+std::string CACVehicle::ClassifyVehicleType(int classId) const {
     switch (classId) {
         case 0: return "car";
         case 1: return "motorbike";
@@ -63,7 +63,7 @@ std::string Vehicle::ClassifyVehicleType(int classId) const {
     }
 }
 
-bool Vehicle::Destroy() {
+bool CACVehicle::Destroy() {
     std::lock_guard<std::mutex> lock(mtx_);
     crossedVehicleTrackIds_.clear();
     return detector_.Destroy();
