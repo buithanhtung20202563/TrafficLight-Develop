@@ -142,20 +142,41 @@ std::vector<CustomObject> ANSCustomTL::RunInference(const cv::Mat& input, const 
 		std::vector<cv::Point> vDetectArea{};
 		std::vector<cv::Point> vCrossLine{};
 		std::vector<cv::Point> vDirection{};
+
+		// Extract ROIs from parameters
 		for (const auto& roi : stVehicleParam.ROIs) {
 			if (roi.regionName == "DetectArea") {
 				vDetectArea = roi.polygon;
 			}
 			else if (roi.regionName == "CrossingLine") {
-				// Do something with crossing line
 				vCrossLine = roi.polygon;
 			}
-			else {
-				// Do something with direction line
+			else if (roi.regionName == "Direction") {
 				vDirection = roi.polygon;
 			}
 		}
 
+		// Create ROI mask for vehicle detection
+		cv::Mat roiMask = cv::Mat::zeros(input.size(), CV_8UC1);
+		if (!vDetectArea.empty()) {
+			std::vector<std::vector<cv::Point>> contours = {vDetectArea};
+			cv::fillPoly(roiMask, contours, cv::Scalar(255));
+		}
+
+		// Run vehicle detection only within ROI
+		std::vector<ANSCENTER::Object> vOutVehicle = m_cVehicleDetector.DetectVehicles(input, "cameraID");
+		
+		// Filter vehicles to only those within the detection area
+		std::vector<ANSCENTER::Object> filteredVehicles;
+		for (const auto& vehicle : vOutVehicle) {
+			cv::Point center(vehicle.box.x + vehicle.box.width/2, 
+						   vehicle.box.y + vehicle.box.height/2);
+			if (cv::pointPolygonTest(vDetectArea, center, false) >= 0) {
+				filteredVehicles.push_back(vehicle);
+			}
+		}
+
+		// Run traffic light detection
 		CustomParams stTrafficParam = m_cTrafficLightDetector.GetParameters();
 		std::vector<cv::Point> vTrafficArea{};
 
@@ -165,20 +186,18 @@ std::vector<CustomObject> ANSCustomTL::RunInference(const cv::Mat& input, const 
 			}
 		}
 
+		// Create ROI mask for traffic light detection
+		cv::Mat trafficRoiMask = cv::Mat::zeros(input.size(), CV_8UC1);
+		if (!vTrafficArea.empty()) {
+			std::vector<std::vector<cv::Point>> contours = {vTrafficArea};
+			cv::fillPoly(trafficRoiMask, contours, cv::Scalar(255));
+		}
+
 		cv::Mat cvTrafficImg = cropFromFourPoints(input, vTrafficArea);
-		cv::Mat cvVehicleImg = cropFromFourPoints(input, vDetectArea);
-
-		cv::imshow("Crop Image", cvTrafficImg);
-		cv::imshow("Crop Image", cvVehicleImg);
-		//cv::waitKey(0);
-		// Run vehicle detection
-		std::vector<ANSCENTER::Object> vOutVehicle = m_cVehicleDetector.DetectVehicles(input, "cameraID");
-
-		// Run traffic light detection
 		std::vector<ANSCENTER::Object> vOutTrafficLight = m_cTrafficLightDetector.DetectTrafficLights(cvTrafficImg, "cameraID");
-		// TungBT: Modify logic passing red light
+
 		// Combine the results
-		for (const auto& obj : vOutVehicle) {
+		for (const auto& obj : filteredVehicles) {
 			CustomObject customObj;
 			customObj.classId = obj.classId;
 			customObj.trackId = obj.trackId;
@@ -190,7 +209,6 @@ std::vector<CustomObject> ANSCustomTL::RunInference(const cv::Mat& input, const 
 		}
 
 		// Traffic light detection class IDs are 8, 9, 10
-		// Because we stack the two class names together, we need to adjust the class IDs
 		int maxVehicleClassId = 7;
 		for (const auto& obj : vOutTrafficLight) {
 			CustomObject customObj;
@@ -202,76 +220,101 @@ std::vector<CustomObject> ANSCustomTL::RunInference(const cv::Mat& input, const 
 			customObj.cameraId = camera_id;
 			results.push_back(customObj);
 		}
-		for (auto& obj : results) {
-			if (obj.className == "red" || obj.className == "green" || obj.className == "yellow")
-			{
-				obj.box.x += vTrafficArea[0].x;
-				obj.box.y += vTrafficArea[0].y;
-				cv::rectangle(input, obj.box, cv::Scalar(0, 255, 0), 2);
-				cv::putText(input, cv::format("%s:%d", obj.className, obj.classId), cv::Point(obj.box.x, obj.box.y - 5),
-					0, 0.6, cv::Scalar(0, 0, 255), 1, cv::LINE_AA);
-			}
-			else
-			{
-				//obj.box.x += vVehicleArea[0].x;
-				//obj.box.y += vVehicleArea[0].y;
-				cv::rectangle(input, obj.box, cv::Scalar(0, 255, 0), 2);
-				cv::putText(input, cv::format("%s:%d", obj.className, obj.classId), cv::Point(obj.box.x, obj.box.y - 5),
-					0, 0.6, cv::Scalar(0, 0, 255), 1, cv::LINE_AA);
-			}
+
+		// Draw ROIs on the image for visualization
+		if (!vDetectArea.empty()) {
+			std::vector<std::vector<cv::Point>> contours = {vDetectArea};
+			cv::polylines(input, contours, true, cv::Scalar(0, 255, 0), 2);
+			cv::putText(input, "Detection Area", vDetectArea[0], 
+					   cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 2);
 		}
+
+		if (!vCrossLine.empty()) {
+			cv::line(input, vCrossLine[0], vCrossLine[1], cv::Scalar(0, 0, 255), 2);
+			cv::putText(input, "Crossing Line", vCrossLine[0], 
+					   cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 255), 2);
+		}
+
+		if (!vTrafficArea.empty()) {
+			std::vector<std::vector<cv::Point>> contours = {vTrafficArea};
+			cv::polylines(input, contours, true, cv::Scalar(255, 0, 0), 2);
+			cv::putText(input, "Traffic Light Area", vTrafficArea[0], 
+					   cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 0, 0), 2);
+		}
+
 		// Check if traffic light is red
 		bool isRedLight = false;
-		std::cout << "\n=== Checking Traffic Light Status ===" << std::endl;
+		std::cout << "\n============= Traffic Light Analysis =============" << std::endl;
+		std::cout << "Camera ID: " << camera_id << std::endl;
+		std::cout << "Time: " << std::put_time(std::localtime(&std::time(nullptr)), "%Y-%m-%d %H:%M:%S") << std::endl;
 		std::cout << "Number of traffic lights detected: " << vOutTrafficLight.size() << std::endl;
 		
 		for (const auto& obj : vOutTrafficLight) {
-			std::cout << "Traffic Light Class: " << obj.className << ", ID: " << obj.classId << std::endl;
+			std::cout << "Traffic Light - Class: " << obj.className 
+				<< ", ID: " << obj.classId 
+				<< ", Confidence: " << obj.confidence 
+				<< ", Position: (" << obj.box.x << "," << obj.box.y << ")" << std::endl;
+			
 			if (obj.className == "red" || obj.classId == 9) {
 				isRedLight = true;
-				std::cout << "RED LIGHT CONFIRMED!" << std::endl;
+				std::cout << "RED LIGHT STATE CONFIRMED - Monitoring for violations" << std::endl;
 				break;
 			}
 		}
 
 		// If red light is detected, check for vehicles in the detection area
 		if (isRedLight) {
-			std::cout << "\n=== Checking for Violations ===" << std::endl;
-			std::cout << "Number of vehicles to check: " << vOutVehicle.size() << std::endl;
+			std::cout << "\n============= Vehicle Detection Analysis =============" << std::endl;
+			std::cout << "Total vehicles detected: " << vOutVehicle.size() << std::endl;
 			
 			for (const auto& vehicle : vOutVehicle) {
-				std::cout << "\nChecking vehicle: " << vehicle.className 
-					<< " (ID: " << vehicle.trackId << ")" << std::endl;
+				std::cout << "\n----- Vehicle Details -----" << std::endl;
+				std::cout << "Type: " << vehicle.className << std::endl;
+				std::cout << "Track ID: " << vehicle.trackId << std::endl;
+				std::cout << "Confidence: " << vehicle.confidence << std::endl;
+				std::cout << "Position: (" << vehicle.box.x << "," << vehicle.box.y << ")" << std::endl;
+				std::cout << "Size: " << vehicle.box.width << "x" << vehicle.box.height << std::endl;
 				
 				bool isViolation = m_cVehicleDetector.IsVehicleCrossedLine(vehicle);
-				std::cout << "IsVehicleCrossedLine returned: " << (isViolation ? "true" : "false") << std::endl;
 				
 				if (isViolation) {
-					// Log violation with timestamp
-					time_t now = time(0);
-					char* dt = ctime(&now);
 					std::cout << "\n!!! RED LIGHT VIOLATION DETECTED !!!" << std::endl;
-					std::cout << "Time: " << dt;
-					std::cout << "Vehicle Type: " << vehicle.className << std::endl;
-					std::cout << "Track ID: " << vehicle.trackId << std::endl;
-					std::cout << "Confidence: " << vehicle.confidence << std::endl;
-					std::cout << "Position: (" << vehicle.box.x << ", " << vehicle.box.y << ")" << std::endl;
-					std::cout << "Size: " << vehicle.box.width << "x" << vehicle.box.height << std::endl;
-					std::cout << "----------------------------------------" << std::endl;
+					std::cout << "Time: " << std::put_time(std::localtime(&std::time(nullptr)), "%Y-%m-%d %H:%M:%S") << std::endl;
+					std::cout << "Location: Camera " << camera_id << std::endl;
+					std::cout << "Violation Details:" << std::endl;
+					std::cout << "- Vehicle Type: " << vehicle.className << std::endl;
+					std::cout << "- Track ID: " << vehicle.trackId << std::endl;
+					std::cout << "- Detection Confidence: " << vehicle.confidence << std::endl;
+					std::cout << "- Vehicle Position: (" << vehicle.box.x << "," << vehicle.box.y << ")" << std::endl;
+					std::cout << "- Vehicle Size: " << vehicle.box.width << "x" << vehicle.box.height << std::endl;
+					std::cout << "=========================================" << std::endl;
 
-					// Draw violation box on the image
-					cv::rectangle(input, vehicle.box, cv::Scalar(0, 0, 255), 3);
-					cv::putText(input, "VIOLATION", 
-						cv::Point(vehicle.box.x, vehicle.box.y - 10),
-						cv::FONT_HERSHEY_SIMPLEX, 0.8, 
-						cv::Scalar(0, 0, 255), 2);
+					// Enhanced violation visualization
+					cv::Scalar violationColor(0, 0, 255);  // Red color
+					cv::rectangle(input, vehicle.box, violationColor, 3);
+					
+					// Add violation text with background
+					std::string violationText = "RED LIGHT VIOLATION #" + std::to_string(vehicle.trackId);
+					cv::Point textPos(vehicle.box.x, vehicle.box.y - 10);
+					
+					// Add background rectangle for text
+					cv::Size textSize = cv::getTextSize(violationText, cv::FONT_HERSHEY_SIMPLEX, 0.8, 2, nullptr);
+					cv::rectangle(input, 
+						cv::Point(textPos.x - 5, textPos.y - textSize.height - 5),
+						cv::Point(textPos.x + textSize.width + 5, textPos.y + 5),
+						violationColor, cv::FILLED);
+						
+					// Add text
+					cv::putText(input, violationText, textPos,
+						cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(255, 255, 255), 2);
 				}
 			}
 		} else {
-			std::cout << "No red light detected - skipping violation checks" << std::endl;
+			std::cout << "\nNo red light detected - Traffic flowing normally" << std::endl;
+			std::cout << "Total vehicles in frame: " << vOutVehicle.size() << std::endl;
 		}
 
-		cv::imshow("ANS Object Tracking", input);
+		cv::imshow("ANS Traffic Monitoring", input);
 		cv::waitKey(1);
 		return results;
 	}

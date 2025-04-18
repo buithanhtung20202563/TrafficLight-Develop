@@ -206,36 +206,13 @@ std::vector<ANSCENTER::Object> CACVehicle::DetectVehicles(const cv::Mat& input, 
 
 bool CACVehicle::IsVehicleCrossedLine(const ANSCENTER::Object& vehicle) {
     try {
-        std::cout << "\n====== VEHICLE DETECTION DETAILS ======" << std::endl;
-        std::cout << "Vehicle Information:" << std::endl;
-        std::cout << "- Type/Class: " << vehicle.className << std::endl;
-        std::cout << "- Track ID: " << vehicle.trackId << std::endl;
-        std::cout << "- Confidence: " << vehicle.confidence << std::endl;
-        std::cout << "- Position: (" << vehicle.box.x << ", " << vehicle.box.y << ")" << std::endl;
-        std::cout << "- Size: " << vehicle.box.width << "x" << vehicle.box.height << std::endl;
-        std::cout << "- Camera ID: " << vehicle.cameraId << std::endl;
-        if (!vehicle.extraInfo.empty()) {
-            std::cout << "- Extra Info: " << vehicle.extraInfo << std::endl;
-        }
-        
         if (m_vDetectAreaROI.empty()) {
-            std::cout << "ERROR: No detection area defined!" << std::endl;
-            std::cout << "======================================\n" << std::endl;
             return false;
         }
 
         // Get the detection area
         const auto& detectArea = m_vDetectAreaROI[0];
-        
-        // Create detection area polygon for checking
         std::vector<cv::Point> polygon = detectArea.polygon;
-        
-        std::cout << "\nDetection Area Details:" << std::endl;
-        std::cout << "- Number of polygon points: " << polygon.size() << std::endl;
-        std::cout << "- Polygon points:" << std::endl;
-        for (size_t i = 0; i < polygon.size(); i++) {
-            std::cout << "  Point " << i + 1 << ": (" << polygon[i].x << ", " << polygon[i].y << ")" << std::endl;
-        }
         
         // Get vehicle center point
         cv::Point vehicleCenter(
@@ -244,12 +221,7 @@ bool CACVehicle::IsVehicleCrossedLine(const ANSCENTER::Object& vehicle) {
         );
 
         // Check if point is inside polygon using OpenCV
-        double result = cv::pointPolygonTest(polygon, vehicleCenter, true); // Using signed distance
-        
-        std::cout << "\nDetection Test Results:" << std::endl;
-        std::cout << "- Vehicle center: (" << vehicleCenter.x << ", " << vehicleCenter.y << ")" << std::endl;
-        std::cout << "- Distance to polygon: " << result << " pixels" << std::endl;
-        std::cout << "- Status: " << (result >= 0 ? "INSIDE/ON" : "OUTSIDE") << " detection area" << std::endl;
+        double result = cv::pointPolygonTest(polygon, vehicleCenter, true);
         
         // If point is inside or on the polygon (result >= 0)
         if (result >= 0) {
@@ -258,13 +230,8 @@ bool CACVehicle::IsVehicleCrossedLine(const ANSCENTER::Object& vehicle) {
                 if (tracked.trackId == vehicle.trackId) {
                     if (!tracked.crossedLine) {
                         tracked.crossedLine = true;
-                        std::cout << "\n!!! NEW VIOLATION DETECTED !!!" << std::endl;
-                        std::cout << "Vehicle has entered restricted area during red light" << std::endl;
-                        std::cout << "======================================\n" << std::endl;
                         return true;
                     }
-                    std::cout << "\nNote: Vehicle already marked as violated" << std::endl;
-                    std::cout << "======================================\n" << std::endl;
                     return false;
                 }
             }
@@ -277,20 +244,12 @@ bool CACVehicle::IsVehicleCrossedLine(const ANSCENTER::Object& vehicle) {
             newVehicle.vehicleType = vehicle.className;
             newVehicle.lastSeen = std::chrono::system_clock::now();
             trackedVehicles.push_back(newVehicle);
-            
-            std::cout << "\n!!! NEW VIOLATION DETECTED (First Time) !!!" << std::endl;
-            std::cout << "Vehicle added to violation tracking" << std::endl;
-            std::cout << "======================================\n" << std::endl;
             return true;
         }
         
-        std::cout << "\nResult: Vehicle is outside detection area" << std::endl;
-        std::cout << "======================================\n" << std::endl;
         return false;
     }
     catch (const std::exception& e) {
-        std::cerr << "Error in IsVehicleCrossedLine: " << e.what() << std::endl;
-        std::cout << "======================================\n" << std::endl;
         return false;
     }
 }
