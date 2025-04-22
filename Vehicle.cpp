@@ -60,80 +60,82 @@ bool CACVehicle::Optimize(bool fp16) {
     return (m_cDetector.Optimize(fp16) == 1);
 }
 
-//bool CACVehicle::ConfigureParameters() {
-//    // Create the detection area ROI based on the diagram
-//    ANSCENTER::Region detectArea;
-//    detectArea.regionType = 1; // Rectangle
-//    detectArea.regionName = "DetectArea";
-//
-//    // Set the rectangle coordinates for the detection area
-//    // These coordinates would match the "Detect Area" area shown in the diagram
-//    detectArea.polygon.push_back(cv::Point(100, 200));
-//    detectArea.polygon.push_back(cv::Point(400, 200));
-//    detectArea.polygon.push_back(cv::Point(400, 400));
-//    detectArea.polygon.push_back(cv::Point(100, 400));
-//
-//    m_vDetectAreaROI.clear();
-//    m_vDetectAreaROI.push_back(detectArea);
-//
-//    // Create the crossing line ROI
-//    ANSCENTER::Region crossingLine;
-//    crossingLine.regionType = 2; // Line
-//    crossingLine.regionName = "CrossingLine";
-//
-//    // Set the line coordinates for the crossing line
-//    // These coordinates would match the "Crossing Line" shown in the diagram
-//    crossingLine.polygon.push_back(cv::Point(100, 380));
-//    crossingLine.polygon.push_back(cv::Point(400, 380));
-//
-//    m_vCrossingLineROI.clear();
-//    m_vCrossingLineROI.push_back(crossingLine);
-//
-//    // Create the direction line ROI
-//    ANSCENTER::Region directionLine;
-//    directionLine.regionType = 4; // Direction line
-//    directionLine.regionName = "Direction";
-//
-//    // Set the line coordinates for the direction line
-//    directionLine.polygon.push_back(cv::Point(250, 350));
-//    directionLine.polygon.push_back(cv::Point(250, 250));
-//
-//    directionLineROI.clear();
-//    directionLineROI.push_back(directionLine);
-//
-//    // Create parameter structure
-//    ANSCENTER::Params param;
-//    param.handleId = 0; // Vehicle detector ID
-//    param.handleName = modelName;
-//
-//    // Add threshold parameter
-//    ANSCENTER::ParamType thresholdParam;
-//    thresholdParam.type = 1; // double
-//    thresholdParam.name = "threshold";
-//    thresholdParam.value = std::to_string(detectionScoreThreshold);
-//
-//    param.handleParametersJson.push_back(thresholdParam);
-//
-//    // Add all ROIs to the parameter
-//    param.ROIs.insert(param.ROIs.end(), m_vDetectAreaROI.begin(), m_vDetectAreaROI.end());
-//    param.ROIs.insert(param.ROIs.end(), m_vCrossingLineROI.begin(), m_vCrossingLineROI.end());
-//    param.ROIs.insert(param.ROIs.end(), directionLineROI.begin(), directionLineROI.end());
-//
-//    parameters.clear();
-//    parameters.push_back(param);
-//
-//    return true;
-//}
+/*
+bool CACVehicle::ConfigureParameters() {
+    // Create the detection area ROI based on the diagram
+    ANSCENTER::Region detectArea;
+    detectArea.regionType = 1; // Rectangle
+    detectArea.regionName = "DetectArea";
+
+    // Set the rectangle coordinates for the detection area
+    // These coordinates would match the "Detect Area" area shown in the diagram
+    detectArea.polygon.push_back(cv::Point(100, 200));
+    detectArea.polygon.push_back(cv::Point(400, 200));
+    detectArea.polygon.push_back(cv::Point(400, 400));
+    detectArea.polygon.push_back(cv::Point(100, 400));
+
+    m_vDetectAreaROI.clear();
+    m_vDetectAreaROI.push_back(detectArea);
+
+    // Create the crossing line ROI
+    ANSCENTER::Region crossingLine;
+    crossingLine.regionType = 2; // Line
+    crossingLine.regionName = "CrossingLine";
+
+    // Set the line coordinates for the crossing line
+    // These coordinates would match the "Crossing Line" shown in the diagram
+    crossingLine.polygon.push_back(cv::Point(100, 380));
+    crossingLine.polygon.push_back(cv::Point(400, 380));
+
+    m_vCrossingLineROI.clear();
+    m_vCrossingLineROI.push_back(crossingLine);
+
+    // Create the direction line ROI
+    ANSCENTER::Region directionLine;
+    directionLine.regionType = 4; // Direction line
+    directionLine.regionName = "Direction";
+
+    // Set the line coordinates for the direction line
+    directionLine.polygon.push_back(cv::Point(250, 350));
+    directionLine.polygon.push_back(cv::Point(250, 250));
+
+    directionLineROI.clear();
+    directionLineROI.push_back(directionLine);
+
+    // Create parameter structure
+    ANSCENTER::Params param;
+    param.handleId = 0; // Vehicle detector ID
+    param.handleName = modelName;
+
+    // Add threshold parameter
+    ANSCENTER::ParamType thresholdParam;
+    thresholdParam.type = 1; // double
+    thresholdParam.name = "threshold";
+    thresholdParam.value = std::to_string(detectionScoreThreshold);
+
+    param.handleParametersJson.push_back(thresholdParam);
+
+    // Add all ROIs to the parameter
+    param.ROIs.insert(param.ROIs.end(), m_vDetectAreaROI.begin(), m_vDetectAreaROI.end());
+    param.ROIs.insert(param.ROIs.end(), m_vCrossingLineROI.begin(), m_vCrossingLineROI.end());
+    param.ROIs.insert(param.ROIs.end(), directionLineROI.begin(), directionLineROI.end());
+
+    parameters.clear();
+    parameters.push_back(param);
+
+    return true;
+}
+*/
 
 bool CACVehicle::ConfigureParameters()
 {
     return true;
 }
 
-bool CACVehicle::SetParameters(const CustomParams& params) 
+bool CACVehicle::SetParameters(const CustomParams& params)
 {
     m_stParameters = params;
-     // Update ROIs if available
+    // Update ROIs if available
 
     if (params.handleId == 0) {
         m_vDetectAreaROI.clear();
@@ -180,7 +182,7 @@ std::vector<ANSCENTER::Object> CACVehicle::DetectVehicles(const cv::Mat& input, 
                         // Convert polygon to rectangle for simple containment check
                         cv::Rect roiRect = cv::boundingRect(roi.polygon);
                         // Check if the vehicle's bounding box intersects with the ROI
-						std::cout << "OBJECT: " << obj.box << std::endl;
+                        std::cout << "OBJECT: " << obj.box << std::endl;
                         if ((obj.box & roiRect).area() > 0) {
                             filteredResults.push_back(obj);
                         }
@@ -213,16 +215,16 @@ bool CACVehicle::IsVehicleCrossedLine(const ANSCENTER::Object& vehicle) {
         // Get the detection area
         const auto& detectArea = m_vDetectAreaROI[0];
         std::vector<cv::Point> polygon = detectArea.polygon;
-        
+
         // Get vehicle center point
         cv::Point vehicleCenter(
-            vehicle.box.x + vehicle.box.width/2,
-            vehicle.box.y + vehicle.box.height/2
+            vehicle.box.x + vehicle.box.width / 2,
+            vehicle.box.y + vehicle.box.height / 2
         );
 
         // Check if point is inside polygon using OpenCV
         double result = cv::pointPolygonTest(polygon, vehicleCenter, true);
-        
+
         // If point is inside or on the polygon (result >= 0)
         if (result >= 0) {
             // Check if vehicle is already tracked
@@ -235,9 +237,9 @@ bool CACVehicle::IsVehicleCrossedLine(const ANSCENTER::Object& vehicle) {
                     return false;
                 }
             }
-        
 
-                    // If not tracked, add to tracking
+
+            // If not tracked, add to tracking
             TrackedVehicle newVehicle;
             newVehicle.trackId = vehicle.trackId;
             newVehicle.lastPosition = vehicle.box;
@@ -247,7 +249,7 @@ bool CACVehicle::IsVehicleCrossedLine(const ANSCENTER::Object& vehicle) {
             trackedVehicles.push_back(newVehicle);
             return true;
         }
-        
+
         return false;
     }
     catch (const std::exception& e) {
