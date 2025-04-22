@@ -10,7 +10,8 @@
 // TungBT: Modify member variable's name, local variable's name
 // Class XYYZZ (Example class CACVehicle with X: Class, YY: Project, ZZ: Class name)
 // Member variable: m_XY (Explain m_: member, X: varibale type, Y: variable's name)
-class CACTrafficLight {
+class CACTrafficLight
+{
 private:
     ANSCENTER::ANSLIB m_cDetector;
     std::string m_sModelName;
@@ -33,17 +34,17 @@ public:
     CACTrafficLight();
     ~CACTrafficLight();
 
-    bool Initialize(const std::string& modelDir, float threshold);
+    bool Initialize(const std::string &modelDir, float threshold);
     bool Optimize(bool fp16);
-    //bool ConfigureParameters();
-    bool SetParameters(const CustomParams& params);
-	CustomParams GetParameters();
+    // bool ConfigureParameters();
+    bool SetParameters(const CustomParams &params);
+    CustomParams GetParameters();
 
-    std::vector<ANSCENTER::Object> DetectTrafficLights(const cv::Mat& input, const std::string& cameraId);
+    std::vector<ANSCENTER::Object> DetectTrafficLights(const cv::Mat &input, const std::string &cameraId);
 
-    bool IsGreen(const std::vector<ANSCENTER::Object>& detectedLights);
-    bool IsRed(const std::vector<ANSCENTER::Object>& detectedLights);
-    bool IsYellow(const std::vector<ANSCENTER::Object>& detectedLights);
+    bool IsGreen(const std::vector<ANSCENTER::Object> &detectedLights);
+    bool IsRed(const std::vector<ANSCENTER::Object> &detectedLights);
+    bool IsYellow(const std::vector<ANSCENTER::Object> &detectedLights);
 
     bool Destroy();
 };

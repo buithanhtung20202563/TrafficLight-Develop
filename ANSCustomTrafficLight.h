@@ -3,7 +3,6 @@
 #pragma once
 #include <string>
 #include <vector>
-#include <opencv2/opencv.hpp>
 #include <mutex>
 #include "ANSLIB.h"
 #include "ANSCustomData.h"
@@ -26,21 +25,8 @@ public:
   virtual std::vector<CustomObject> RunInference(const cv::Mat &input, const std::string &camera_id) = 0;
   virtual bool ConfigureParamaters(std::vector<CustomParams> &param) = 0;
   // virtual bool SetParamaters(const std::vector<CustomParams>& param) = 0;
-  //{
-  // try {
-  //     _param.clear();
-  //     if (param.empty())return false;
-  //     for (const auto& p : param) {
-  //         _param.push_back(p);
-  //     }
-  //     return true;
-  // }
-  // catch (...) {
-  //     return false;
-  // }
-  //};
-  virtual bool Destroy() = 0;
 
+  virtual bool Destroy() = 0;
 };
 
 // Implementation of the traffic light model
@@ -51,10 +37,10 @@ private:
   CACVehicle m_cVehicleDetector;           // Vehicle object
   CACTrafficLight m_cTrafficLightDetector; // Traffic light object
   std::recursive_mutex _mutex;
-  ANSCENTER::ANSLIB vehicleDetector; // This is the vehicle object detector
-	ANSCENTER::ANSLIB trafficLightDetector; // This is the traffic light object detector
-	
-    // Store label maps for vehicle and traffic light
+  ANSCENTER::ANSLIB vehicleDetector;      // This is the vehicle object detector
+  ANSCENTER::ANSLIB trafficLightDetector; // This is the traffic light object detector
+
+  // Store label maps for vehicle and traffic light
   std::string _vehicleLabelMap;
   std::string _trafficLightLabelMap;
 
@@ -68,19 +54,20 @@ private:
   int _trafficLightDetectionType;
 
   std::string _vehicleModelName;
-	std::string _trafficLightModelName;
+  std::string _trafficLightModelName;
 
-	double _detectionScoreThreshold{ 0.5 };
+  double _detectionScoreThreshold{0.5};
+
 public:
-    bool Initialize(const std::string& modelDiretory, float detectionScoreThreshold, std::string& labelMap)override;
-    bool OptimizeModel(bool fp16)override;
-    bool SetParamaters(const std::vector<CustomParams>& param);
-    std::vector<CustomObject> RunInference(const cv::Mat& input)override;
-    std::vector<CustomObject> RunInference(const cv::Mat& input, const std::string& camera_id)override;
-    bool ConfigureParamaters(std::vector<CustomParams>& param)override;
+  bool Initialize(const std::string &modelDiretory, float detectionScoreThreshold, std::string &labelMap) override;
+  bool OptimizeModel(bool fp16) override;
+  bool SetParamaters(const std::vector<CustomParams> &param);
+  std::vector<CustomObject> RunInference(const cv::Mat &input) override;
+  std::vector<CustomObject> RunInference(const cv::Mat &input, const std::string &camera_id) override;
+  bool ConfigureParamaters(std::vector<CustomParams> &param) override;
 
-    bool Destroy()override;
-    ANSCustomTL();
-    ~ANSCustomTL();
+  bool Destroy() override;
+  ANSCustomTL();
+  ~ANSCustomTL();
 };
 #endif

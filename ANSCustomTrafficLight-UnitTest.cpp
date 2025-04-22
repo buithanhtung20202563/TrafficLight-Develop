@@ -1,6 +1,6 @@
 #include <ANSCustomTrafficLight.h>
 #include <iostream>
-#include<filesystem>
+#include <filesystem>
 
 int main()
 {
@@ -19,7 +19,8 @@ int main()
     cv::Mat image = cv::imread(path);
     std::cout << "Version OpenCV: " << CV_VERSION << std::endl;
 
-    if (!customTL.Initialize(modelDirectory, detectionScoreThreshold, labelMap)) {
+    if (!customTL.Initialize(modelDirectory, detectionScoreThreshold, labelMap))
+    {
         std::cerr << "Failed to initialize the custom traffic light model.\n";
         return -1;
     }
@@ -27,7 +28,7 @@ int main()
     std::vector<CustomObject> detectionResult;
     detectionResult = customTL.RunInference(image, "cameraId");
 
-       // Lưu ảnh đầu ra vào đường dẫn tương đối
+    // Lưu ảnh đầu ra vào đường dẫn tương đối
     std::string outputImagePath = "..\\ANS_Object_Tracking_Result.jpg";
     cv::imwrite(outputImagePath, image);
 

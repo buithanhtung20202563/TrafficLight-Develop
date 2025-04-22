@@ -57,42 +57,45 @@ bool CACTrafficLight::Optimize(bool fp16) {
     std::lock_guard<std::recursive_mutex> lock(g_mutex);
     return (m_cDetector.Optimize(fp16) == 1);
 }
+/*
+***********************************************************************************
+bool CACTrafficLight::ConfigureParameters() {
+   // Create the traffic light ROI based on the diagram
+   ANSCENTER::Region trafficRoi;
+   trafficRoi.regionType = 1; // Rectangle
+   trafficRoi.regionName = "TrafficRoi";
 
-//bool CACTrafficLight::ConfigureParameters() {
-//    // Create the traffic light ROI based on the diagram
-//    ANSCENTER::Region trafficRoi;
-//    trafficRoi.regionType = 1; // Rectangle
-//    trafficRoi.regionName = "TrafficRoi";
-//
-//    // Set the rectangle coordinates for the traffic light detection area
-//    // These coordinates would match the "Traffic ROI" area shown in the diagram
-//    trafficRoi.polygon.push_back(cv::Point(100, 50));
-//    trafficRoi.polygon.push_back(cv::Point(300, 50));
-//    trafficRoi.polygon.push_back(cv::Point(300, 200));
-//    trafficRoi.polygon.push_back(cv::Point(100, 200));
-//
-//    trafficROIs.clear();
-//    trafficROIs.push_back(trafficRoi);
-//
-//    // Create parameter structure
-//    ANSCENTER::Params param;
-//    param.handleId = 1; // Traffic Light detector ID
-//    param.handleName = modelName;
-//
-//    // Add threshold parameter
-//    ANSCENTER::ParamType thresholdParam;
-//    thresholdParam.type = 1; // double
-//    thresholdParam.name = "threshold";
-//    thresholdParam.value = std::to_string(detectionScoreThreshold);
-//
-//    param.handleParametersJson.push_back(thresholdParam);
-//    param.ROIs = trafficROIs;
-//
-//    parameters.clear();
-//    parameters.push_back(param);
-//
-//    return true;
-//}
+   // Set the rectangle coordinates for the traffic light detection area
+   // These coordinates would match the "Traffic ROI" area shown in the diagram
+   trafficRoi.polygon.push_back(cv::Point(100, 50));
+   trafficRoi.polygon.push_back(cv::Point(300, 50));
+   trafficRoi.polygon.push_back(cv::Point(300, 200));
+   trafficRoi.polygon.push_back(cv::Point(100, 200));
+
+   trafficROIs.clear();
+   trafficROIs.push_back(trafficRoi);
+
+   // Create parameter structure
+   ANSCENTER::Params param;
+   param.handleId = 1; // Traffic Light detector ID
+   param.handleName = modelName;
+
+   // Add threshold parameter
+   ANSCENTER::ParamType thresholdParam;
+   thresholdParam.type = 1; // double
+   thresholdParam.name = "threshold";
+   thresholdParam.value = std::to_string(detectionScoreThreshold);
+
+   param.handleParametersJson.push_back(thresholdParam);
+   param.ROIs = trafficROIs;
+
+   parameters.clear();
+   parameters.push_back(param);
+
+   return true;
+}
+************************************************************************************ 
+*/ 
 
 bool CACTrafficLight::SetParameters(const CustomParams& params)
 {
@@ -134,11 +137,6 @@ std::vector<ANSCENTER::Object> CACTrafficLight::DetectTrafficLights(const cv::Ma
                         // Convert polygon to rectangle for simple containment check
                         cv::Rect roiRect = cv::boundingRect(roi.polygon);
                         filteredResults.push_back(obj);
-                        //// Check if the object's bounding box intersects with the ROI
-                        //if ((obj.box & roiRect).area() > 0) {
-                        //    filteredResults.push_back(obj);
-                        //    break;
-                        //}
                     }
                 }
             }
